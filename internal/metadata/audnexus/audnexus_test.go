@@ -22,7 +22,8 @@ const bookJSON = `{
   "runtimeLengthMin": 970,
   "language": "english",
   "image": "https://m.media-amazon.com/images/I/x.jpg",
-  "description": "A lone astronaut.",
+  "description": "A lone astronaut. He must save the earth. Alone. Except he...",
+  "summary": "<p>A lone astronaut.</p> <p>He must save the earth. Alone.</p><p>Except he &amp; his crew aren't &quot;alone&quot;.</p>",
   "seriesPrimary": {"asin": "X", "name": "Hail Mary", "position": "1"},
   "genres": [
     {"asin": "1", "name": "Science Fiction", "type": "genre"},
@@ -71,6 +72,41 @@ func TestGetBookParsesLiveShape(t *testing.T) {
 	}
 	if len(book.Authors) != 1 || book.Authors[0] != "Andy Weir" {
 		t.Errorf("authors: %v", book.Authors)
+	}
+
+	// The full summary must survive as plain text, and Blurb() must prefer it
+	// over the provider's truncated teaser.
+	wantSummary := "A lone astronaut.\n\nHe must save the earth. Alone.\n\nExcept he & his crew aren't \"alone\"."
+	if book.Summary != wantSummary {
+		t.Errorf("summary =\n%q\nwant\n%q", book.Summary, wantSummary)
+	}
+	if book.Blurb() != wantSummary {
+		t.Errorf("Blurb() should prefer the full summary, got %q", book.Blurb())
+	}
+}
+
+func TestBlurbFallsBackToDescription(t *testing.T) {
+	b := metadata.Book{Description: "short teaser..."}
+	if b.Blurb() != "short teaser..." {
+		t.Errorf("got %q", b.Blurb())
+	}
+}
+
+func TestHTMLToText(t *testing.T) {
+	cases := map[string]string{
+		"":                              "",
+		"plain":                         "plain",
+		"<p>one</p><p>two</p>":          "one\n\ntwo",
+		"a<br>b":                        "a\n\nb",
+		"<i>x</i> &amp; <b>y</b>":       "x & y",
+		"&quot;q&quot; &#39;s&#39;":     `"q" 's'`,
+		"<p>trailing space </p>":        "trailing space",
+		"<ul><li>a</li><li>b</li></ul>": "a\n\nb",
+	}
+	for in, want := range cases {
+		if got := htmlToText(in); got != want {
+			t.Errorf("htmlToText(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

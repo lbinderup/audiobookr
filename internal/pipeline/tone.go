@@ -38,8 +38,14 @@ func (t toneRunner) tag(ctx context.Context, m4bPath string, book *metadata.Book
 	if book.Subtitle != "" {
 		args = append(args, "--meta-subtitle="+book.Subtitle)
 	}
-	if book.Description != "" {
-		args = append(args, "--meta-description="+normalizeText(book.Description))
+	// Write the full publisher blurb to both the short (desc) and long (ldes)
+	// atoms: players disagree about which one they read, and the provider's
+	// own "description" field is a truncated teaser we don't want to embed.
+	if blurb := normalizeText(book.Blurb()); blurb != "" {
+		args = append(args,
+			"--meta-description="+blurb,
+			"--meta-long-description="+blurb,
+		)
 	}
 	if len(book.Genres) > 0 {
 		args = append(args, "--meta-genre="+book.Genres[0])

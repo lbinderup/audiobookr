@@ -43,9 +43,13 @@ type Book struct {
 	Publisher      string   `json:"publisher"`
 	Language       string   `json:"language"`
 	Genres         []string `json:"genres"`
-	Description    string   `json:"description"` // plain text
-	RuntimeMin     int      `json:"runtime_min"`
-	CoverURL       string   `json:"cover_url"`
+	// Description is the provider's short teaser (Audnexus truncates it to
+	// ~250 chars ending in "..."); Summary is the full publisher blurb,
+	// converted to plain text. Prefer Summary for tagging — see Book.Blurb.
+	Description string `json:"description"`
+	Summary     string `json:"summary"`
+	RuntimeMin  int    `json:"runtime_min"`
+	CoverURL    string `json:"cover_url"`
 }
 
 // Chapter offsets are relative to the start of the complete audiobook.
@@ -63,6 +67,16 @@ type ChapterInfo struct {
 	BrandIntroMs int64     `json:"brand_intro_ms"`
 	BrandOutroMs int64     `json:"brand_outro_ms"`
 	Chapters     []Chapter `json:"chapters"`
+}
+
+// Blurb returns the fullest description text available: the complete
+// publisher summary when the provider supplied one, otherwise the short
+// teaser. This is what gets embedded in the file.
+func (b Book) Blurb() string {
+	if b.Summary != "" {
+		return b.Summary
+	}
+	return b.Description
 }
 
 type Provider interface {

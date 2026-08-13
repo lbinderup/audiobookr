@@ -54,10 +54,16 @@ other's files:
 Each can *read* the other's files but not delete or rename them, so Sonarr
 chokes on files you uploaded, and you can't clean up what Sonarr produced.
 
-The cause is that files get created `rw-r--r--` (644): only the owner can
-write. Ownership differs, so nobody can write to everything. The fix has three
-parts, and **all three are required** — this is why the usual "just set PUID"
-advice doesn't stick.
+The cause is that files and folders get created `644`/`755`: only the owner can
+write. Ownership differs, so nobody can write to everything.
+
+Note the part that trips people up: **deleting a file requires write permission
+on the directory containing it, not on the file.** So an app that creates its
+library folders with `755` locks everyone else out of removing or renaming
+anything inside, however permissive the files themselves are.
+
+The fix has three parts, and **all three are required** — this is why the usual
+"just set PUID" advice doesn't stick.
 
 **1. A shared group both identities belong to.**
 Control Panel → Privilege → User Groups → create `media`, then add both your
@@ -86,10 +92,24 @@ setgid alone still yields 644 files that the group cannot write.
 
 - audiobookr: `UMASK=002` (already the default in this image).
 - linuxserver.io *arr containers: add `- UMASK=002` to their environment.
-- Your SMB uploads: QNAP creates files per the share's mask. If desktop
-  uploads still land as 644, set `create mask = 0664` / `directory mask = 0775`
-  for that share (Control Panel → Network & File Services → SMB → Advanced
-  Options, or the per-share config), so files you copy in are group-writable too.
+- Your SMB uploads: **don't** go looking for a `create mask` setting — QTS has
+  no GUI for it, and its generated Samba config sets `inherit permissions = yes`,
+  which overrides the mask options anyway. Files copied in from a PC inherit the
+  *parent directory's* mode instead. So step 2 above is the whole fix: set the
+  tree to `2775` and uploads land `0664` in the right group automatically.
+
+If permissions still don't behave, check the two things that override POSIX:
+
+- **The sticky bit** on a directory ("only the owner may delete or rename",
+  shown in File Station as *Only the owner can delete files and folders*, and as
+  `1777`/`3777` in `ls -ld`). It blocks other accounts from renaming files even
+  in a world-writable folder.
+- **Windows ACL support / Advanced Folder Permissions** (Control Panel →
+  Privilege → Shared Folders → Advanced Permissions). With Windows ACLs on, an
+  NT ACL in the folder's extended attributes is authoritative and the POSIX bits
+  become cosmetic — `getfacl` will show extra entries. Keep both off for a
+  POSIX/group-based setup, and note QNAP warns that toggling them can drop
+  existing permissions.
 
 After this, both identities can fully manage every file, no more `chown` over
 SSH. Existing files need the one-time `chmod`/`chgrp` above; everything created
