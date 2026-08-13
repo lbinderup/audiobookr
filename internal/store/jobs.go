@@ -34,6 +34,9 @@ type JobOptions struct {
 	WriteChaptersTxt bool   `json:"write_chapters_txt"`
 	AudnexusURL      string `json:"audnexus_url"`
 	ChapterMode      string `json:"chapter_mode"` // auto|existing|provider ("" = auto)
+	// ChapterShiftMs offsets provider chapter timings to match this rip
+	// (positive = later). Ignored for file-boundary chapters.
+	ChapterShiftMs int64 `json:"chapter_shift_ms"`
 }
 
 type Job struct {

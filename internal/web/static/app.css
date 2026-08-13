@@ -346,6 +346,26 @@ details.tree-dir[open] > summary::before { transform: rotate(90deg); }
   flex-shrink: 0;
 }
 .use-chapters { margin-top: 0.6rem; }
+
+.chapter-shift {
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+.chapter-shift label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+.shift-controls { display: flex; align-items: center; gap: 0.4rem; }
+.shift-input {
+  width: 6.5rem;
+  text-align: right;
+  font-family: ui-monospace, monospace;
+  padding: 0.3rem 0.5rem;
+}
+.chapter-shift .hint { margin-top: 0.35rem; }
 .file-row { display: flex; gap: 2px; }
 .file-row .chapter-btn:first-child { flex: 1; min-width: 0; }
 .chapter-end {

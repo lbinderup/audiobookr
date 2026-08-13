@@ -85,6 +85,42 @@ func (b Book) Blurb() string {
 	return b.Description
 }
 
+// Shifted returns a copy of the chapter list moved by shiftMs (positive =
+// later). Rips often start a little before or after the edition the provider
+// timed, so a constant offset is usually all it takes to line them up.
+// Starts are clamped into [0, runtime] and lengths recomputed from the
+// resulting boundaries, so the list stays consistent.
+func (c *ChapterInfo) Shifted(shiftMs int64) *ChapterInfo {
+	if c == nil || shiftMs == 0 || len(c.Chapters) == 0 {
+		return c
+	}
+	out := *c
+	out.Chapters = make([]Chapter, 0, len(c.Chapters))
+	for _, ch := range c.Chapters {
+		start := ch.StartMs + shiftMs
+		if start < 0 {
+			start = 0
+		}
+		if c.RuntimeMs > 0 && start > c.RuntimeMs {
+			start = c.RuntimeMs
+		}
+		out.Chapters = append(out.Chapters, Chapter{Title: ch.Title, StartMs: start})
+	}
+	for i := range out.Chapters {
+		if i+1 < len(out.Chapters) {
+			out.Chapters[i].LengthMs = out.Chapters[i+1].StartMs - out.Chapters[i].StartMs
+		} else if c.RuntimeMs > 0 {
+			out.Chapters[i].LengthMs = c.RuntimeMs - out.Chapters[i].StartMs
+		} else {
+			out.Chapters[i].LengthMs = c.Chapters[i].LengthMs
+		}
+		if out.Chapters[i].LengthMs < 0 {
+			out.Chapters[i].LengthMs = 0
+		}
+	}
+	return &out
+}
+
 type Provider interface {
 	// Search returns candidate matches. Implementations may consult a
 	// different backend than book lookups (Audnexus has no search, so the

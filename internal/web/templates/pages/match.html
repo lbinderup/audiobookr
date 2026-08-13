@@ -100,11 +100,53 @@
     // boundaries, so an offset anywhere in the book resolves to the right
     // source file and the position inside it — this is how Audible's chapter
     // timings can be auditioned across a folder of mp3s.
+    // Only one preview plays at a time — starting one silences the rest.
+    // 'play' does not bubble, so listen in the capture phase.
+    document.addEventListener('play', e => {
+      document.querySelectorAll('audio').forEach(a => {
+        if (a !== e.target) a.pause();
+      });
+    }, true);
+
+    // The per-book chapter shift, in ms. Lives in a form field so it is
+    // submitted with the queue and the conversion applies the same offset.
+    function shiftInputFor(el) {
+      return el.closest('.match-item')?.querySelector('.shift-input');
+    }
+    function shiftMsFor(el) {
+      const v = parseInt(shiftInputFor(el)?.value, 10);
+      return Number.isFinite(v) ? v : 0;
+    }
+    // Used by the hx-vals of the "Load for comparison" button, which may run
+    // before any shift field exists.
+    function shiftValue(path) {
+      const el = document.querySelector(`input[name="shift:${CSS.escape(path)}"]`);
+      const v = parseInt(el?.value, 10);
+      return Number.isFinite(v) ? v : 0;
+    }
+    function nudgeShift(btn, delta) {
+      const input = shiftInputFor(btn);
+      if (!input) return;
+      const current = parseInt(input.value, 10);
+      input.value = (Number.isFinite(current) ? current : 0) + delta;
+      shiftChanged(input);
+    }
+    // Typing in the field shouldn't fire a request per keystroke.
+    let shiftTimer;
+    function shiftChanged(input) {
+      const item = input.closest('.match-item');
+      if (!item) return;
+      clearTimeout(shiftTimer);
+      shiftTimer = setTimeout(() => updateChapterPlan(item), 400);
+    }
+
     function seekPreview(btn) {
       const panel = btn.closest('.chapter-preview');
       const audio = panel?.querySelector('audio');
       if (!audio) return;
-      const ms = +btn.dataset.ms;
+      // Provider timings are shifted; the file's own offsets are absolute.
+      const shift = btn.closest('.provider-col') ? shiftMsFor(btn) : 0;
+      const ms = Math.max(0, (+btn.dataset.ms) + shift);
       const filesAttr = panel.dataset.files;
       if (!filesAttr) { // single file: offsets are already local
         audio.currentTime = ms / 1000;
@@ -162,9 +204,11 @@
       const path = item.querySelector('input[name="paths"]').value;
       const choice = item.querySelector('input[type=radio]:checked')?.value || '';
       const mode = item.querySelector('select[name^="chapters:"]')?.value || '';
+      const shift = shiftMsFor(item);
       target.innerHTML = '<span class="muted">Deciding chapters…</span>';
       fetch('/match/chapter-plan?path=' + encodeURIComponent(path) +
-            '&choice=' + encodeURIComponent(choice) + '&mode=' + encodeURIComponent(mode))
+            '&choice=' + encodeURIComponent(choice) + '&mode=' + encodeURIComponent(mode) +
+            '&shift=' + encodeURIComponent(shift))
         .then(r => r.text()).then(html => { target.innerHTML = html; })
         .catch(() => { target.innerHTML = ''; });
     }

@@ -150,6 +150,10 @@ func (rc *RealConverter) Run(ctx context.Context, job *store.Job, report Progres
 			}
 		}
 	}
+	if opts.ChapterShiftMs != 0 && provided != nil {
+		provided = provided.Shifted(opts.ChapterShiftMs)
+		logf("applied a %+d ms shift to the provider chapters", opts.ChapterShiftMs)
+	}
 	resolved := resolveChapters(chapterMode, provided, files, merged.DurationMs, job.Metadata.Title)
 	warnings = append(warnings, resolved.Warnings...)
 	logf("chapters: %d entries from %q", len(resolved.Chapters), resolved.Source)

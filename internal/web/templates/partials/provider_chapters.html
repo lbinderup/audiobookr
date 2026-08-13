@@ -6,7 +6,7 @@
         hx-get="/match/provider-chapters"
         hx-target="closest .provider-col"
         hx-swap="innerHTML"
-        hx-vals='js:{choice: document.querySelector(`input[name="match:{{.Path}}"]:checked`)?.value || "", path: {{.Path | printf "%q"}}}'>
+        hx-vals='js:{choice: document.querySelector(`input[name="match:{{.Path}}"]:checked`)?.value || "", path: {{.Path | printf "%q"}}, shift: shiftValue({{.Path | printf "%q"}})}'>
   Load for comparison
 </button>
 {{else}}
@@ -18,6 +18,23 @@
   </button>
   {{end}}
 </div>
+
+<div class="chapter-shift">
+  <label for="shift-{{.Path}}">Shift chapters</label>
+  <div class="shift-controls">
+    <button type="button" class="btn-ghost btn-small" onclick="nudgeShift(this, -1000)" title="1 second earlier">−1000</button>
+    <input type="text" inputmode="numeric" class="shift-input" id="shift-{{.Path}}"
+           name="shift:{{.Path}}" value="{{.ShiftMs}}" autocomplete="off"
+           oninput="shiftChanged(this)">
+    <span class="muted">ms</span>
+    <button type="button" class="btn-ghost btn-small" onclick="nudgeShift(this, 1000)" title="1 second later">+1000</button>
+  </div>
+  <p class="hint">
+    Applied to these timings when you click one, and to the chapters actually written.
+    Positive moves them later. Set it, then tap a chapter to hear where it lands.
+  </p>
+</div>
+
 <button type="button" class="btn-ghost btn-small use-chapters" onclick="useChapters(this, 'provider')">
   Use these chapters
 </button>

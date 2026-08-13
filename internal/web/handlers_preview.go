@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -177,6 +178,7 @@ type providerChaptersData struct {
 	RuntimeMs int64
 	Runtime   string
 	Accurate  bool
+	ShiftMs   int64 // current per-book offset, preserved across reloads
 	Err       string
 }
 
@@ -184,7 +186,10 @@ type providerChaptersData struct {
 // timings so the user can seek the local audio to them for comparison.
 func (s *Server) handleMatchProviderChapters(w http.ResponseWriter, r *http.Request) {
 	choice := r.URL.Query().Get("choice") // "ASIN|region" from the selected radio
-	data := providerChaptersData{Path: r.URL.Query().Get("path")}
+	data := providerChaptersData{
+		Path:    r.URL.Query().Get("path"),
+		ShiftMs: parseShiftMs(r.URL.Query().Get("shift")),
+	}
 	asin, region, ok := strings.Cut(choice, "|")
 	if !ok || asin == "" {
 		data.Err = "Select a match first — then its official chapters can be loaded here."
@@ -273,6 +278,10 @@ func (s *Server) handleMatchChapterPlan(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	}
+	// The verdict must reflect the same shift the conversion will apply.
+	if shift := parseShiftMs(q.Get("shift")); shift != 0 && provider != nil {
+		provider = provider.Shifted(shift)
+	}
 
 	plan := pipeline.PlanChapters(mode, provider, infos, totalMs, "")
 	data.Source = plan.Source
@@ -309,6 +318,28 @@ func choiceHint(choice string) string {
 		return " (no match selected yet)"
 	}
 	return ""
+}
+
+// parseShiftMs reads a user-supplied chapter offset, ignoring junk and
+// capping at ±1 hour — a larger offset means the wrong edition, not a rip
+// that drifted.
+func parseShiftMs(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0
+	}
+	const limit = 3_600_000
+	if n > limit {
+		return limit
+	}
+	if n < -limit {
+		return -limit
+	}
+	return n
 }
 
 func msClock(ms int64) string {
