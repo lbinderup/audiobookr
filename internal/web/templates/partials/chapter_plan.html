@@ -1,0 +1,9 @@
+{{define "chapter_plan"}}
+{{if .Err}}
+  <span class="muted">⚠ {{.Err}}</span>
+{{else}}
+  <span class="plan-verdict plan-{{.Source}}">{{.Icon}} {{.Verdict}}</span>
+  <span class="muted">{{.Reason}}</span>
+  {{range .Warnings}}<span class="warn-text">⚠ {{.}}</span>{{end}}
+{{end}}
+{{end}}

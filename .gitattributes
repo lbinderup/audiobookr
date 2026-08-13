@@ -1,0 +1,17 @@
+# Normalize text files to LF in the repository.
+* text=auto eol=lf
+
+# Files that MUST be LF in the working tree: CRLF breaks the shebang/parsing
+# inside the Linux container.
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker/* text eol=lf
+
+# Windows-only helper stays CRLF.
+*.ps1 text eol=crlf
+
+# Binary assets.
+*.png binary
+*.jpg binary
+*.m4b binary
+*.mp3 binary

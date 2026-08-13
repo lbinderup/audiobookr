@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · Audiobookr</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/htmx-ext-sse.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/import"><span class="brand-mark">◈</span> audiobookr</a>
+    <nav>
+      <a href="/import" {{if eq .Active "import"}}class="active"{{end}}>Import</a>
+      <a href="/queue" {{if eq .Active "queue"}}class="active"{{end}}>Queue</a>
+      <a href="/settings" {{if eq .Active "settings"}}class="active"{{end}}>Settings</a>
+    </nav>
+  </header>
+  <main>
+    {{template "flash" .}}
+    {{template "content" .}}
+  </main>
+  <footer>audiobookr {{.Version}}</footer>
+  <script>
+    // Success flashes fade out; error flashes stay until dismissed by
+    // navigation so problems don't vanish unread.
+    document.querySelectorAll('.flash-ok').forEach(el => {
+      setTimeout(() => {
+        el.style.transition = 'opacity 0.6s';
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 700);
+      }, 4000);
+    });
+  </script>
+</body>
+</html>

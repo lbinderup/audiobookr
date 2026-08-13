@@ -1,0 +1,6 @@
+{{define "progress"}}
+<span class="progress-wrap">
+  <progress max="100" value="{{.Percent}}"></progress>
+  <span class="progress-label">{{.Stage}} · {{.Percent}}%</span>
+</span>
+{{end}}

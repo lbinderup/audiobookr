@@ -1,0 +1,31 @@
+{{define "candidates"}}
+{{if .Err}}
+  <p class="muted">⚠ {{.Err}}</p>
+{{else if not .Results}}
+  <p class="muted">No results — try different keywords or paste an ASIN.</p>
+{{else}}
+  <div class="candidate-grid">
+    {{$path := .RelPath}}{{$region := .Region}}
+    {{range $i, $r := .Results}}
+    <label class="candidate {{if eq $i 0}}candidate-best{{end}}">
+      <input type="radio" name="match:{{$path}}" value="{{$r.ASIN}}|{{$region}}" {{if eq $i 0}}data-best="1"{{end}}>
+      {{if $r.CoverURL}}<img src="{{$r.CoverURL}}" alt="" loading="lazy">{{else}}<span class="cover-blank">📕</span>{{end}}
+      <span class="candidate-info">
+        <strong>{{$r.Title}}</strong>
+        {{if $r.Subtitle}}<span class="muted">{{$r.Subtitle}}</span>{{end}}
+        <span>{{range $j, $a := $r.Authors}}{{if $j}}, {{end}}{{$a}}{{end}}</span>
+        <span class="muted">
+          {{if $r.Narrators}}read by {{range $j, $n := $r.Narrators}}{{if $j}}, {{end}}{{$n}}{{end}}{{end}}
+        </span>
+        <span class="muted">
+          {{if $r.Year}}{{$r.Year}}{{end}}
+          {{if $r.RuntimeMin}} · {{runtime $r.RuntimeMin}}{{end}}
+          {{if $r.Language}} · {{$r.Language}}{{end}}
+        </span>
+        <span class="muted candidate-asin">{{$r.ASIN}}</span>
+      </span>
+    </label>
+    {{end}}
+  </div>
+{{end}}
+{{end}}

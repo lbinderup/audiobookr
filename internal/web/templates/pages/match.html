@@ -1,0 +1,171 @@
+{{define "content"}}
+<section class="card">
+  <h1>Match</h1>
+  <p class="muted">Confirm the Audible match for each selected book, then queue the conversion.</p>
+
+  <form method="post" action="/queue" id="match-form">
+    <ul class="match-list">
+      {{range .Items}}
+      <li class="match-item" id="item-{{.Index}}">
+        <input type="hidden" name="paths" value="{{.RelPath}}">
+        <div class="match-source">
+          <span class="tree-icon">📁</span>
+          <strong>{{.RelPath}}</strong>
+          {{if .Err}}
+            <span class="badge badge-err">{{.Err}}</span>
+          {{else}}
+            <span class="muted">{{.Files}} audio file{{if ne .Files 1}}s{{end}}</span>
+          {{end}}
+          <button type="button" class="btn-ghost btn-small match-remove"
+                  title="Remove from this batch (the files stay in the input folder)"
+                  onclick="removeMatchItem(this)">✕ Remove</button>
+        </div>
+
+        {{if not .Err}}
+        <div class="match-controls">
+          <input type="text" class="match-query" id="q-{{.Index}}" value="{{.Keywords}}" spellcheck="false"
+                 placeholder="Search keywords…">
+          <select id="region-{{.Index}}" class="match-region">
+            {{$region := $.Region}}
+            {{range $.Regions}}<option value="{{.}}" {{if eq . $region}}selected{{end}}>{{.}}</option>{{end}}
+          </select>
+          <button type="button" class="btn-ghost"
+                  hx-get="/match/candidates"
+                  hx-target="#candidates-{{.Index}}"
+                  hx-vals='js:{path: {{.RelPath | printf "%q"}}, q: document.getElementById("q-{{.Index}}").value, region: document.getElementById("region-{{.Index}}").value}'>
+            Search
+          </button>
+          <input type="text" class="match-asin" id="asin-{{.Index}}" placeholder="…or paste ASIN" maxlength="10" spellcheck="false">
+          <button type="button" class="btn-ghost"
+                  hx-get="/match/lookup"
+                  hx-target="#candidates-{{.Index}}"
+                  hx-vals='js:{path: {{.RelPath | printf "%q"}}, asin: document.getElementById("asin-{{.Index}}").value, region: document.getElementById("region-{{.Index}}").value}'>
+            Look up
+          </button>
+          <select name="cleanup:{{.RelPath}}" class="match-cleanup" title="What happens to the source files after a successful conversion">
+            <option value="">After: default ({{$.CleanupDefault}})</option>
+            <option value="leave">After: leave sources</option>
+            <option value="move">After: move to completed</option>
+            <option value="delete">After: delete sources</option>
+          </select>
+          <select name="chapters:{{.RelPath}}" class="match-chapters" title="Which chapter timings to embed in the m4b">
+            <option value="">Chapters: auto</option>
+            <option value="existing">Chapters: keep file's own</option>
+            <option value="provider">Chapters: force Audible's</option>
+          </select>
+          <button type="button" class="btn-ghost"
+                  hx-get="/match/preview"
+                  hx-target="#preview-{{.Index}}"
+                  hx-trigger="click once"
+                  hx-vals='js:{path: {{.RelPath | printf "%q"}}}'
+                  onclick="togglePreview('preview-{{.Index}}')">
+            🎧 Preview chapters
+          </button>
+        </div>
+        <div class="chapter-plan"></div>
+        <div id="preview-{{.Index}}"></div>
+
+        <div class="match-candidates" id="candidates-{{.Index}}"
+             hx-get="/match/candidates"
+             hx-trigger="load"
+             hx-vals='js:{path: {{.RelPath | printf "%q"}}, q: {{.Keywords | printf "%q"}}, title: {{.Title | printf "%q"}}, author: {{.Author | printf "%q"}}, region: {{$.Region | printf "%q"}}}'>
+          <span class="muted">Searching…</span>
+        </div>
+        {{end}}
+      </li>
+      {{end}}
+    </ul>
+
+    <div class="selection-bar">
+      <span id="match-count" class="muted">No matches confirmed</span>
+      <span>
+        <a href="/import" class="btn-ghost">← Back</a>
+        <button type="submit" class="btn-primary" id="queue-btn" disabled>Queue conversion →</button>
+      </span>
+    </div>
+  </form>
+
+  <script>
+    function updateMatchCount() {
+      const total = document.querySelectorAll('.match-item .match-controls').length;
+      const chosen = new Set(
+        [...document.querySelectorAll('#match-form input[type=radio]:checked')].map(r => r.name)
+      ).size;
+      document.getElementById('match-count').textContent =
+        chosen === 0 ? 'No matches confirmed' : chosen + ' of ' + total + ' matched';
+      document.getElementById('queue-btn').disabled = chosen === 0;
+    }
+    // Chapter preview: seek the panel's player to a chapter start. Playback
+    // starting mid-sentence there means the timings don't fit this file.
+    function seekPreview(btn) {
+      const audio = btn.closest('.chapter-preview')?.querySelector('audio');
+      if (!audio) return;
+      audio.currentTime = (+btn.dataset.ms) / 1000;
+      audio.play();
+    }
+    // The preview button loads once (htmx click-once) and folds after that —
+    // the file's chapters don't change, so re-fetching would only lose state.
+    function togglePreview(id) {
+      const panel = document.getElementById(id);
+      if (!panel || !panel.innerHTML.trim()) return; // first click: htmx loads it
+      panel.hidden = !panel.hidden;
+      if (panel.hidden) panel.querySelector('audio')?.pause();
+    }
+    // "Use these chapters" mirrors the dropdown: existing (left list) or
+    // provider (right list); the verdict line refreshes via the change event.
+    function useChapters(btn, mode) {
+      const sel = btn.closest('.match-item')?.querySelector('select[name^="chapters:"]');
+      if (!sel) return;
+      sel.value = mode;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      btn.textContent = '✓ Will be used';
+      setTimeout(() => { btn.textContent = 'Use these chapters'; }, 1800);
+    }
+    // Removing an item only drops it from this batch — its inputs (paths +
+    // match radio) leave the form with it, so it can't be queued.
+    function removeMatchItem(btn) {
+      const item = btn.closest('.match-item');
+      item.remove();
+      if (!document.querySelector('.match-item')) {
+        window.location.href = '/import';
+        return;
+      }
+      updateMatchCount();
+    }
+    // The chapter verdict runs the pipeline's real decision logic server-side
+    // and shows what "auto" (or an override) will actually embed.
+    function updateChapterPlan(item) {
+      const target = item.querySelector('.chapter-plan');
+      if (!target) return;
+      const path = item.querySelector('input[name="paths"]').value;
+      const choice = item.querySelector('input[type=radio]:checked')?.value || '';
+      const mode = item.querySelector('select[name^="chapters:"]')?.value || '';
+      target.innerHTML = '<span class="muted">Deciding chapters…</span>';
+      fetch('/match/chapter-plan?path=' + encodeURIComponent(path) +
+            '&choice=' + encodeURIComponent(choice) + '&mode=' + encodeURIComponent(mode))
+        .then(r => r.text()).then(html => { target.innerHTML = html; })
+        .catch(() => { target.innerHTML = ''; });
+    }
+    document.getElementById('match-form').addEventListener('change', e => {
+      const item = e.target.closest('.match-item');
+      if (e.target.matches('input[type=radio]')) {
+        updateMatchCount();
+        if (item) updateChapterPlan(item);
+      } else if (e.target.matches('select[name^="chapters:"]') && item) {
+        updateChapterPlan(item);
+      }
+    });
+    document.body.addEventListener('htmx:afterSwap', () => {
+      updateMatchCount();
+      // A verified ASIN card arrives pre-checked — surface its verdict too.
+      document.querySelectorAll('.match-item').forEach(item => {
+        if (item.querySelector('input[type=radio]:checked') &&
+            item.querySelector('.chapter-plan') &&
+            !item.querySelector('.chapter-plan').innerHTML.trim()) {
+          updateChapterPlan(item);
+        }
+      });
+    });
+  </script>
+</section>
+{{end}}

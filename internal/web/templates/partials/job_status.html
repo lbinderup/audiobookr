@@ -1,0 +1,23 @@
+{{define "job_status"}}
+<div class="job-status">
+  {{template "status_badge" .Status}}
+  {{if eq .Status "running"}}
+    <span sse-swap="job-{{.ID}}-progress" hx-swap="innerHTML">
+      {{template "progress" (progressOf .)}}
+    </span>
+  {{end}}
+  {{if eq .Status "done"}}
+    <p>Output: <code>{{.OutputPath}}</code></p>
+  {{end}}
+  {{if .Error}}<p class="err-text">{{.Error}}</p>{{end}}
+  {{range .Warnings}}<p class="warn-text">⚠ {{.}}</p>{{end}}
+  <p class="job-actions">
+    {{if or (eq .Status "pending") (eq .Status "running")}}
+    <form method="post" action="/jobs/{{.ID}}/cancel"><button class="btn-ghost">Cancel</button></form>
+    {{end}}
+    {{if or (eq .Status "error") (eq .Status "cancelled")}}
+    <form method="post" action="/jobs/{{.ID}}/retry"><button class="btn-ghost">Retry</button></form>
+    {{end}}
+  </p>
+</div>
+{{end}}

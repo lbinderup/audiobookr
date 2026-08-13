@@ -1,0 +1,6 @@
+devdata/
+testdata/
+.claude/
+.git/
+*.md
+docker-compose*.yml

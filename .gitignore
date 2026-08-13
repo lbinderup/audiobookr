@@ -1,0 +1,17 @@
+# Dev scratch space: local database, logs, input/output volumes, tone binary
+devdata/
+
+# Build output
+/audiobookr
+/audiobookr.exe
+dist/
+
+# Logs
+*.log
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,218 @@
+package pipeline
+
+import (
+	"strings"
+	"testing"
+
+	"audiobookr/internal/metadata"
+)
+
+func TestSnapBitrate(t *testing.T) {
+	cases := map[int]int{0: 128, 63: 64, 70: 64, 81: 96, 110: 96, 125: 128, 130: 128, 200: 192, 300: 320, 999: 320}
+	for in, want := range cases {
+		if got := SnapBitrate(in); got != want {
+			t.Errorf("SnapBitrate(%d) = %d, want %d", in, got, want)
+		}
+	}
+}
+
+func TestParseFFmpegTime(t *testing.T) {
+	ms, ok := parseFFmpegTime("size=  55296KiB time=01:02:03.50 bitrate= 121.4kbits/s speed=41.3x")
+	if !ok || ms != 3_723_500 {
+		t.Errorf("got %d, %v", ms, ok)
+	}
+	if _, ok := parseFFmpegTime("frame I/O info"); ok {
+		t.Error("false positive")
+	}
+}
+
+func TestPlanMerge(t *testing.T) {
+	aac := []*FileInfo{
+		{Codec: "aac", Container: "mov,mp4,m4a,3gp,3g2,mj2", DurationMs: 1000, BitrateKbps: 125},
+		{Codec: "aac", Container: "mov,mp4,m4a,3gp,3g2,mj2", DurationMs: 2000, BitrateKbps: 125},
+	}
+	p := planMerge(aac, 0)
+	if !p.StreamCopy || p.TotalMs != 3000 {
+		t.Errorf("aac plan: %+v", p)
+	}
+
+	mixed := []*FileInfo{
+		{Codec: "mp3", Container: "mp3", DurationMs: 1000, BitrateKbps: 63, SampleRate: 44100},
+		{Codec: "aac", Container: "mov,mp4,m4a,3gp,3g2,mj2", DurationMs: 2000},
+	}
+	p = planMerge(mixed, 0)
+	if p.StreamCopy || p.BitrateKbps != 64 || p.SampleRate != 44100 {
+		t.Errorf("mixed plan: %+v", p)
+	}
+	if p = planMerge(mixed, 192); p.BitrateKbps != 192 {
+		t.Errorf("override ignored: %+v", p)
+	}
+}
+
+func chapterFixtures(n int) []*FileInfo {
+	files := make([]*FileInfo, n)
+	for i := range files {
+		files[i] = &FileInfo{
+			Path:       "Track " + string(rune('1'+i)) + ".mp3",
+			DurationMs: 60_000,
+		}
+	}
+	return files
+}
+
+func TestResolveChaptersProviderMatch(t *testing.T) {
+	files := chapterFixtures(3)
+	provider := &metadata.ChapterInfo{
+		RuntimeMs:  180_500, // within 10s of 180000
+		IsAccurate: true,
+		Chapters:   []metadata.Chapter{{Title: "One", StartMs: 0, LengthMs: 180_000}},
+	}
+	r := resolveChapters(ChapterModeAuto, provider, files, 180_000, "Book")
+	if r.Source != "audnexus" || len(r.Chapters) != 1 || len(r.Warnings) != 0 {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestResolveChaptersRuntimeMismatchFallsBack(t *testing.T) {
+	files := chapterFixtures(3)
+	provider := &metadata.ChapterInfo{
+		RuntimeMs: 500_000, // way off vs 180000
+		Chapters:  []metadata.Chapter{{Title: "One"}},
+	}
+	r := resolveChapters(ChapterModeAuto, provider, files, 180_000, "Book")
+	if r.Source != "files" || len(r.Chapters) != 3 || len(r.Warnings) == 0 {
+		t.Errorf("%+v", r)
+	}
+	if r.Chapters[2].StartMs != 120_000 {
+		t.Errorf("cumulative offsets wrong: %+v", r.Chapters)
+	}
+}
+
+func TestResolveChaptersInaccurateWarns(t *testing.T) {
+	provider := &metadata.ChapterInfo{
+		RuntimeMs:  180_000,
+		IsAccurate: false,
+		Chapters:   []metadata.Chapter{{Title: "One"}},
+	}
+	r := resolveChapters(ChapterModeAuto, provider, chapterFixtures(2), 180_000, "Book")
+	if r.Source != "audnexus" || len(r.Warnings) != 1 {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestResolveChaptersNeverZeroForMultiFile(t *testing.T) {
+	r := resolveChapters(ChapterModeAuto, nil, chapterFixtures(4), 240_000, "Book")
+	if r.Source != "files" || len(r.Chapters) != 4 {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestResolveChaptersSingleFileKeepsExisting(t *testing.T) {
+	files := []*FileInfo{{
+		Path: "book.m4b", DurationMs: 100_000,
+		Chapters: []ProbedChapter{{Title: "Intro", StartMs: 0, EndMs: 5000}, {Title: "Ch1", StartMs: 5000, EndMs: 100_000}},
+	}}
+	r := resolveChapters(ChapterModeAuto, nil, files, 100_000, "Book")
+	if r.Source != "existing" || len(r.Chapters) != 2 || r.Chapters[1].LengthMs != 95_000 {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestResolveChaptersSingleFileNoData(t *testing.T) {
+	files := []*FileInfo{{Path: "book.mp3", DurationMs: 100_000}}
+	r := resolveChapters(ChapterModeAuto, nil, files, 100_000, "My Book")
+	if r.Source != "single" || len(r.Chapters) != 1 || r.Chapters[0].Title != "My Book" {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestResolveChaptersAutoPrefersProviderWhenBothExistAndRuntimeMatches(t *testing.T) {
+	files := []*FileInfo{{
+		Path: "book.m4b", DurationMs: 180_000,
+		Chapters: []ProbedChapter{{Title: "Rip Chapter", StartMs: 0, EndMs: 180_000}},
+	}}
+	provider := &metadata.ChapterInfo{
+		RuntimeMs: 180_000, IsAccurate: true,
+		Chapters: []metadata.Chapter{{Title: "Official Chapter", StartMs: 0, LengthMs: 180_000}},
+	}
+	r := resolveChapters(ChapterModeAuto, provider, files, 180_000, "Book")
+	if r.Source != "audnexus" || r.Chapters[0].Title != "Official Chapter" {
+		t.Errorf("runtime-matching provider should beat existing chapters in auto: %+v", r)
+	}
+}
+
+func TestResolveChaptersModeExistingIgnoresProvider(t *testing.T) {
+	files := []*FileInfo{{
+		Path: "book.m4b", DurationMs: 180_000,
+		Chapters: []ProbedChapter{{Title: "My Intro", StartMs: 0, EndMs: 180_000}},
+	}}
+	provider := &metadata.ChapterInfo{
+		RuntimeMs: 180_000, IsAccurate: true,
+		Chapters: []metadata.Chapter{{Title: "Provider Ch", StartMs: 0, LengthMs: 180_000}},
+	}
+	r := resolveChapters(ChapterModeExisting, provider, files, 180_000, "Book")
+	if r.Source != "existing" || r.Chapters[0].Title != "My Intro" {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestResolveChaptersModeProviderForcesDespiteMismatch(t *testing.T) {
+	provider := &metadata.ChapterInfo{
+		RuntimeMs: 900_000, IsAccurate: true, // way off vs 180000
+		Chapters: []metadata.Chapter{{Title: "Provider Ch", StartMs: 0, LengthMs: 900_000}},
+	}
+	r := resolveChapters(ChapterModeProvider, provider, chapterFixtures(3), 180_000, "Book")
+	if r.Source != "audnexus" || len(r.Warnings) == 0 {
+		t.Errorf("forced provider should be used with a warning: %+v", r)
+	}
+}
+
+func TestResolveChaptersModeProviderWithNoneFallsBack(t *testing.T) {
+	r := resolveChapters(ChapterModeProvider, nil, chapterFixtures(3), 180_000, "Book")
+	if r.Source != "files" || len(r.Warnings) == 0 {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestFilenameTitles(t *testing.T) {
+	named := []*FileInfo{
+		{Path: "01 - Opening Credits.mp3"}, {Path: "02 - The Journey Begins.mp3"},
+	}
+	got := filenameTitles(named)
+	if got[0] != "Opening Credits" || got[1] != "The Journey Begins" {
+		t.Errorf("named: %v", got)
+	}
+
+	numbered := []*FileInfo{{Path: "Track 01.mp3"}, {Path: "Track 02.mp3"}}
+	got = filenameTitles(numbered)
+	if got[0] != "Chapter 01" || got[1] != "Chapter 02" {
+		t.Errorf("numbered: %v", got)
+	}
+
+	identical := []*FileInfo{{Path: "CD1/dune.mp3"}, {Path: "CD2/dune.mp3"}}
+	got = filenameTitles(identical)
+	if got[0] != "Chapter 01" {
+		t.Errorf("identical names should fall back: %v", got)
+	}
+}
+
+func TestChaptersTxtFormat(t *testing.T) {
+	txt := chaptersTxt([]metadata.Chapter{
+		{Title: "Opening Credits", StartMs: 0, LengthMs: 11_264},
+		{Title: "Chapter 1", StartMs: 11_264, LengthMs: 3_723_500},
+	})
+	want := "00:00:00.000 Opening Credits\n00:00:11.264 Chapter 1\n## total-duration: 01:02:14.764\n"
+	if txt != want {
+		t.Errorf("got:\n%s\nwant:\n%s", txt, want)
+	}
+}
+
+func TestHiResCoverURL(t *testing.T) {
+	if got := hiResCoverURL("https://m.media-amazon.com/images/I/81abc+L.jpg"); !strings.HasSuffix(got, "._SL2000_.jpg") {
+		t.Errorf("got %s", got)
+	}
+	already := "https://x/y._SL500_.jpg"
+	if got := hiResCoverURL(already); got != already {
+		t.Errorf("mutated already-sized url: %s", got)
+	}
+}

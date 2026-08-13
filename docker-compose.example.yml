@@ -1,0 +1,16 @@
+services:
+  audiobookr:
+    image: audiobookr:latest # build with: docker build -t audiobookr .
+    container_name: audiobookr
+    environment:
+      - PUID=1000            # must be able to read /input and write /output
+      - PGID=1000
+      - TZ=Europe/Copenhagen
+    volumes:
+      - /path/to/appdata/audiobookr:/config   # SQLite db + logs; keep on local storage (not NFS/SMB)
+      - /path/to/downloads/audiobooks:/input  # where raw audiobooks arrive
+      - /path/to/library/audiobooks:/output   # your Plex/Prologue library
+      - /path/to/processed:/completed         # optional: for the "move" cleanup mode
+    ports:
+      - "8684:8684"
+    restart: unless-stopped

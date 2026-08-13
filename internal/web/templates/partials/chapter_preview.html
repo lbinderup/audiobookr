@@ -1,0 +1,45 @@
+{{define "chapter_preview"}}
+<div class="chapter-preview">
+  {{if .Err}}
+    <p class="muted">⚠ {{.Err}}</p>
+  {{else}}
+    {{if .Playable}}
+    <audio controls preload="metadata" src="/preview/audio?path={{.File | urlquery}}"></audio>
+    {{else}}
+    <p class="muted">This format can't be played in a browser, but the chapter list below is still shown.</p>
+    {{end}}
+    <p class="hint">Click a chapter to jump the player there and hear whether it lines up.</p>
+
+    <div class="chapter-columns">
+      <div>
+        <h3>Embedded chapters {{if .Chapters}}<span class="muted">({{len .Chapters}} · {{.Duration}})</span>{{end}}</h3>
+        {{if .Chapters}}
+        <div class="chapter-list">
+          {{range .Chapters}}
+          <button type="button" class="chapter-btn" data-ms="{{.StartMs}}" onclick="seekPreview(this)">
+            <span class="chapter-stamp">{{.Stamp}}</span> {{.Title}}
+          </button>
+          {{end}}
+        </div>
+        <button type="button" class="btn-ghost btn-small use-chapters" onclick="useChapters(this, 'existing')">
+          Use these chapters
+        </button>
+        {{else}}
+        <p class="muted">No chapters embedded in this file.</p>
+        {{end}}
+      </div>
+
+      <div class="provider-col">
+        <h3>Audible chapters</h3>
+        <button type="button" class="btn-ghost btn-small"
+                hx-get="/match/provider-chapters"
+                hx-target="closest .provider-col"
+                hx-swap="innerHTML"
+                hx-vals='js:{choice: document.querySelector(`input[name="match:{{.RelPath}}"]:checked`)?.value || "", path: {{.RelPath | printf "%q"}}}'>
+          Load for comparison
+        </button>
+      </div>
+    </div>
+  {{end}}
+</div>
+{{end}}

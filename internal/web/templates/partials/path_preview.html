@@ -1,0 +1,10 @@
+{{define "path_preview"}}
+{{if .Err}}
+<code class="path-preview">⚠ {{.Err}}</code>
+{{else}}
+<span class="path-preview-rows">
+  <span><span class="muted">series book:</span> <code class="path-preview">{{.Series}}</code></span>
+  <span><span class="muted">standalone:</span> <code class="path-preview">{{.Standalone}}</code></span>
+</span>
+{{end}}
+{{end}}

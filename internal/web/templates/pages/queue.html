@@ -1,0 +1,15 @@
+{{define "content"}}
+<section class="card" hx-ext="sse" sse-connect="/events">
+  <div class="queue-head">
+    <h1>Queue</h1>
+    <form method="post" action="/queue/clear-history"
+          onsubmit="return confirm('Remove all finished, failed and cancelled jobs from the history?')">
+      <button type="submit" class="btn-ghost">Clear history</button>
+    </form>
+  </div>
+
+  <div id="queue-table" hx-get="/queue/table?page={{.Page}}" hx-trigger="sse:queue-changed" hx-swap="innerHTML">
+    {{template "queue_table" .}}
+  </div>
+</section>
+{{end}}

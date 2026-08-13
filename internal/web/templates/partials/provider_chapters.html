@@ -1,0 +1,25 @@
+{{define "provider_chapters"}}
+{{if .Err}}
+<h3>Audible chapters</h3>
+<p class="muted">⚠ {{.Err}}</p>
+<button type="button" class="btn-ghost btn-small"
+        hx-get="/match/provider-chapters"
+        hx-target="closest .provider-col"
+        hx-swap="innerHTML"
+        hx-vals='js:{choice: document.querySelector(`input[name="match:{{.Path}}"]:checked`)?.value || "", path: {{.Path | printf "%q"}}}'>
+  Load for comparison
+</button>
+{{else}}
+<h3>Audible chapters <span class="muted">({{len .Chapters}} · {{.Runtime}}{{if not .Accurate}} · flagged inaccurate{{end}})</span></h3>
+<div class="chapter-list">
+  {{range .Chapters}}
+  <button type="button" class="chapter-btn" data-ms="{{.StartMs}}" onclick="seekPreview(this)">
+    <span class="chapter-stamp">{{.Stamp}}</span> {{.Title}}
+  </button>
+  {{end}}
+</div>
+<button type="button" class="btn-ghost btn-small use-chapters" onclick="useChapters(this, 'provider')">
+  Use these chapters
+</button>
+{{end}}
+{{end}}

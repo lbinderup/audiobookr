@@ -1,0 +1,57 @@
+{{define "content"}}
+<section class="card">
+  <h1>Import</h1>
+  <p class="muted">Select audiobooks from <code>{{.InputDir}}</code> to match and convert. Newest folders first.</p>
+
+  {{if .Empty}}
+    <p class="muted">No audiobooks found in the input directory.</p>
+  {{else}}
+  <form method="post" action="/match" id="import-form">
+    <div class="tree-toolbar">
+      <button type="button" class="btn-ghost" onclick="document.querySelectorAll('#tree > li > .tree-row input[type=checkbox], #tree > li > details > summary input[type=checkbox]').forEach(c => c.checked = true); updateCount()">Select all</button>
+      <button type="button" class="btn-ghost" onclick="document.querySelectorAll('#import-form input[type=checkbox]').forEach(c => c.checked = false); updateCount()">Clear</button>
+    </div>
+
+    <ul class="tree" id="tree">
+      {{template "tree" .Entries}}
+    </ul>
+
+    <div class="selection-bar">
+      <span id="selection-count" class="muted">Nothing selected</span>
+      <button type="submit" class="btn-primary" id="match-btn" disabled>Match selected →</button>
+    </div>
+  </form>
+
+  <script>
+    function updateCount() {
+      const n = document.querySelectorAll('#import-form input[type=checkbox]:checked').length;
+      document.getElementById('selection-count').textContent =
+        n === 0 ? 'Nothing selected' : n + ' selected';
+      document.getElementById('match-btn').disabled = n === 0;
+    }
+    // A selection is one conversion job: checking a folder covers everything
+    // inside it, so descendants uncheck; checking something inside a selected
+    // folder means the user wants finer granularity, so ancestors uncheck.
+    document.getElementById('import-form').addEventListener('change', e => {
+      if (!e.target.matches('input[type=checkbox]')) return;
+      if (e.target.checked) {
+        const ownDetails = e.target.closest('summary')?.closest('details');
+        if (ownDetails) {
+          ownDetails.querySelectorAll(':scope > ul input[type=checkbox]:checked')
+            .forEach(c => { c.checked = false; });
+        }
+        let ancestor = ownDetails
+          ? ownDetails.parentElement.closest('details')
+          : e.target.closest('details');
+        while (ancestor) {
+          const cb = ancestor.querySelector(':scope > summary input[type=checkbox]');
+          if (cb) cb.checked = false;
+          ancestor = ancestor.parentElement.closest('details');
+        }
+      }
+      updateCount();
+    });
+  </script>
+  {{end}}
+</section>
+{{end}}

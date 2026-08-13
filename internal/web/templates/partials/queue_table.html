@@ -1,0 +1,31 @@
+{{define "queue_table"}}
+{{/* Counts live inside this partial so SSE-triggered refreshes keep them
+     in sync with the rows (a finished job clears "1 converting"). */}}
+<p class="muted queue-counts">
+  {{with .Counts}}
+    {{if .pending}}<span class="badge badge-pending">◇ {{.pending}} pending</span>{{end}}
+    {{if .running}}<span class="badge badge-running">◐ {{.running}} converting</span>{{end}}
+    {{if .done}}<span class="badge badge-done">◆ {{.done}} done</span>{{end}}
+    {{if .error}}<span class="badge badge-err">✕ {{.error}} failed</span>{{end}}
+    {{if .cancelled}}<span class="badge">– {{.cancelled}} cancelled</span>{{end}}
+  {{end}}
+  {{if eq .Total 0}}Nothing here yet — queue a conversion from the Import screen.{{end}}
+</p>
+{{if .Jobs}}
+<table class="jobs">
+  <thead>
+    <tr><th>Status</th><th>Book</th><th>Source</th><th>Progress</th><th>Queued</th><th></th></tr>
+  </thead>
+  <tbody>
+    {{range .Jobs}}{{template "job_row" .}}{{end}}
+  </tbody>
+</table>
+{{if gt .LastPage 1}}
+<nav class="pager">
+  {{if gt .Page 1}}<a class="btn-ghost" href="/queue?page={{sub .Page 1}}">← Newer</a>{{end}}
+  <span class="muted">page {{.Page}} of {{.LastPage}}</span>
+  {{if lt .Page .LastPage}}<a class="btn-ghost" href="/queue?page={{add .Page 1}}">Older →</a>{{end}}
+</nav>
+{{end}}
+{{end}}
+{{end}}

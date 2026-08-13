@@ -1,0 +1,226 @@
+package store
+
+import (
+	"database/sql"
+	"fmt"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"audiobookr/internal/pathtmpl"
+)
+
+// Settings are the runtime-editable options, persisted as key/value rows.
+// Zero rows is a valid state: Defaults() supplies every value until the user
+// first saves.
+type Settings struct {
+	InputDir          string `key:"input_dir"`
+	OutputDir         string `key:"output_dir"`
+	CompletedDir      string `key:"completed_dir"`
+	CleanupMode       string `key:"cleanup_mode"` // move|delete|leave
+	PathTemplate      string `key:"path_template"`
+	MetadataProvider  string `key:"metadata_provider"`
+	AudnexusURL       string `key:"audnexus_url"`
+	RegionDefault     string `key:"region_default"`
+	WorkerConcurrency int    `key:"worker_concurrency"`
+	BitrateKbps       int    `key:"bitrate_kbps"` // 0 = auto-probe
+	Encoder           string `key:"encoder"`      // aac|fdkaac
+	WriteChaptersTxt  bool   `key:"write_chapters_txt"`
+}
+
+var Regions = []string{"us", "ca", "uk", "au", "fr", "de", "jp", "it", "in", "es"}
+
+var CleanupModes = []string{"leave", "move", "delete"}
+
+// Defaults returns the settings used before the user saves anything.
+// inputDir/outputDir come from the process config (container volume mounts).
+func Defaults(inputDir, outputDir string) Settings {
+	return Settings{
+		InputDir:          inputDir,
+		OutputDir:         outputDir,
+		CompletedDir:      "",
+		CleanupMode:       "leave",
+		PathTemplate:      "{author}/{series_name}/{title}/{title} [{asin}]",
+		MetadataProvider:  "audnexus",
+		AudnexusURL:       "https://api.audnex.us",
+		RegionDefault:     "us",
+		WorkerConcurrency: 1,
+		BitrateKbps:       0,
+		Encoder:           "aac",
+		WriteChaptersTxt:  true,
+	}
+}
+
+// GetSettings loads settings, filling any missing keys from def.
+func (s *Store) GetSettings(def Settings) (Settings, error) {
+	rows, err := s.db.Query("SELECT key, value FROM settings")
+	if err != nil {
+		return def, err
+	}
+	defer rows.Close()
+	got := map[string]string{}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return def, err
+		}
+		got[k] = v
+	}
+	if err := rows.Err(); err != nil {
+		return def, err
+	}
+
+	out := def
+	if v, ok := got["input_dir"]; ok {
+		out.InputDir = v
+	}
+	if v, ok := got["output_dir"]; ok {
+		out.OutputDir = v
+	}
+	if v, ok := got["completed_dir"]; ok {
+		out.CompletedDir = v
+	}
+	if v, ok := got["cleanup_mode"]; ok {
+		out.CleanupMode = v
+	}
+	if v, ok := got["path_template"]; ok {
+		out.PathTemplate = v
+	}
+	if v, ok := got["metadata_provider"]; ok {
+		out.MetadataProvider = v
+	}
+	if v, ok := got["audnexus_url"]; ok {
+		out.AudnexusURL = v
+	}
+	if v, ok := got["region_default"]; ok {
+		out.RegionDefault = v
+	}
+	if v, ok := got["worker_concurrency"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			out.WorkerConcurrency = n
+		}
+	}
+	if v, ok := got["bitrate_kbps"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			out.BitrateKbps = n
+		}
+	}
+	if v, ok := got["encoder"]; ok {
+		out.Encoder = v
+	}
+	if v, ok := got["write_chapters_txt"]; ok {
+		out.WriteChaptersTxt = v == "true"
+	}
+	return out, nil
+}
+
+// SaveSettings validates and persists all settings atomically.
+func (s *Store) SaveSettings(set Settings) error {
+	if errs := set.Validate(); len(errs) > 0 {
+		return fmt.Errorf("invalid settings: %s", strings.Join(errs, "; "))
+	}
+	kv := map[string]string{
+		"input_dir":          set.InputDir,
+		"output_dir":         set.OutputDir,
+		"completed_dir":      set.CompletedDir,
+		"cleanup_mode":       set.CleanupMode,
+		"path_template":      set.PathTemplate,
+		"metadata_provider":  set.MetadataProvider,
+		"audnexus_url":       set.AudnexusURL,
+		"region_default":     set.RegionDefault,
+		"worker_concurrency": strconv.Itoa(set.WorkerConcurrency),
+		"bitrate_kbps":       strconv.Itoa(set.BitrateKbps),
+		"encoder":            set.Encoder,
+		"write_chapters_txt": strconv.FormatBool(set.WriteChaptersTxt),
+	}
+	return s.inTx(func(tx *sql.Tx) error {
+		for k, v := range kv {
+			if _, err := tx.Exec(
+				"INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+				k, v,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// Validate returns user-facing error strings, one per problem, so the
+// settings form can show them all at once.
+func (set Settings) Validate() []string {
+	var errs []string
+	if strings.TrimSpace(set.InputDir) == "" {
+		errs = append(errs, "Input directory must not be empty.")
+	}
+	if strings.TrimSpace(set.OutputDir) == "" {
+		errs = append(errs, "Output directory must not be empty.")
+	}
+	if !contains(CleanupModes, set.CleanupMode) {
+		errs = append(errs, fmt.Sprintf("Cleanup mode must be one of %s.", strings.Join(CleanupModes, ", ")))
+	}
+	if set.CleanupMode == "move" {
+		if strings.TrimSpace(set.CompletedDir) == "" {
+			errs = append(errs, "Cleanup mode \"move\" requires a completed directory.")
+		} else if isWithin(set.CompletedDir, set.InputDir) {
+			errs = append(errs, "The completed directory must not be inside the input directory — processed sources would reappear in the import screen.")
+		}
+	}
+	if err := pathtmpl.Validate(set.PathTemplate); err != nil {
+		errs = append(errs, fmt.Sprintf("Path template: %v.", err))
+	}
+	if set.MetadataProvider != "audnexus" {
+		errs = append(errs, "Metadata provider must be \"audnexus\" (AudiobookDB support will arrive once its API launches).")
+	}
+	if !strings.HasPrefix(set.AudnexusURL, "http://") && !strings.HasPrefix(set.AudnexusURL, "https://") {
+		errs = append(errs, "Audnexus URL must start with http:// or https://.")
+	}
+	if !contains(Regions, set.RegionDefault) {
+		errs = append(errs, fmt.Sprintf("Region must be one of %s.", strings.Join(Regions, ", ")))
+	}
+	if set.WorkerConcurrency < 1 || set.WorkerConcurrency > 8 {
+		errs = append(errs, "Worker concurrency must be between 1 and 8.")
+	}
+	if set.BitrateKbps != 0 && !contains([]int{64, 96, 128, 192, 256, 320}, set.BitrateKbps) {
+		errs = append(errs, "Bitrate must be Auto or one of 64, 96, 128, 192, 256, 320 kbps.")
+	}
+	if set.Encoder != "aac" && set.Encoder != "fdkaac" {
+		errs = append(errs, "Encoder must be \"aac\" or \"fdkaac\".")
+	}
+	return errs
+}
+
+// isWithin reports whether child is lexically inside parent (or equal).
+func isWithin(child, parent string) bool {
+	c := filepath.Clean(child)
+	p := filepath.Clean(parent)
+	if c == p {
+		return true
+	}
+	rel, err := filepath.Rel(p, c)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func contains[T comparable](xs []T, x T) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) inTx(fn func(*sql.Tx) error) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}

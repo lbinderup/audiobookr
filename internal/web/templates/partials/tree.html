@@ -1,0 +1,32 @@
+{{define "tree"}}
+{{range .}}
+<li>
+  {{if .IsDir}}
+  <details class="tree-dir">
+    <summary>
+      <span class="tree-row">
+        <input type="checkbox" name="paths" value="{{.RelPath}}" onclick="event.stopPropagation()">
+        <span class="tree-icon">📁</span>
+        <span class="tree-name">{{.Name}}</span>
+        <span class="tree-meta muted">
+          {{if .AudioFiles}}{{.AudioFiles}} file{{if ne .AudioFiles 1}}s{{end}}{{end}}
+          {{if and .AudioFiles .SubDirs}} · {{end}}
+          {{if .SubDirs}}{{.SubDirs}} folder{{if ne .SubDirs 1}}s{{end}}{{end}}
+        </span>
+      </span>
+    </summary>
+    <ul class="tree" hx-get="/import/tree?path={{.RelPath | urlquery}}" hx-trigger="intersect once" hx-swap="innerHTML">
+      <li class="muted tree-loading">Loading…</li>
+    </ul>
+  </details>
+  {{else}}
+  <span class="tree-row tree-file">
+    <input type="checkbox" name="paths" value="{{.RelPath}}">
+    <span class="tree-icon">🎵</span>
+    <span class="tree-name">{{.Name}}</span>
+    <span class="tree-meta muted">{{humanSize .Size}}</span>
+  </span>
+  {{end}}
+</li>
+{{end}}
+{{end}}

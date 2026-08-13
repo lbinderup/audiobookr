@@ -1,0 +1,33 @@
+{{define "content"}}
+<section class="card" hx-ext="sse" sse-connect="/events">
+  <p><a href="/queue" class="muted">← Queue</a></p>
+
+  <div class="job-head">
+    {{if .Job.Metadata.CoverURL}}<img class="job-cover" src="{{.Job.Metadata.CoverURL}}" alt="">{{end}}
+    <div>
+      <h1>{{if .Job.Metadata.Title}}{{.Job.Metadata.Title}}{{else}}{{.Job.InputPath}}{{end}}</h1>
+      <p class="muted">
+        {{range $i, $a := .Job.Metadata.Authors}}{{if $i}}, {{end}}{{$a}}{{end}}
+        {{if .Job.Metadata.Narrators}} · read by {{range $i, $n := .Job.Metadata.Narrators}}{{if $i}}, {{end}}{{$n}}{{end}}{{end}}
+        {{if .Job.Metadata.SeriesName}} · {{.Job.Metadata.SeriesName}} #{{.Job.Metadata.SeriesPosition}}{{end}}
+      </p>
+      <p class="muted">
+        <code>{{.Job.ASIN}}</code> · region {{.Job.Region}} · {{len .Job.SourceFiles}} source file(s)
+        {{if .Job.Metadata.RuntimeMin}} · {{runtime .Job.Metadata.RuntimeMin}}{{end}}
+      </p>
+    </div>
+  </div>
+
+  <div id="job-status-block"
+       hx-get="/jobs/{{.Job.ID}}/status"
+       hx-trigger="sse:job-{{.Job.ID}}-status"
+       hx-swap="innerHTML">
+    {{template "job_status" .Job}}
+  </div>
+
+  <h2>Log</h2>
+  <pre class="job-log" sse-swap="job-{{.Job.ID}}-log" hx-swap="beforeend">{{.LogTail}}
+</pre>
+  <p><a class="btn-ghost" href="/jobs/{{.Job.ID}}/log" download="{{.Job.ID}}.log">Download full log</a></p>
+</section>
+{{end}}

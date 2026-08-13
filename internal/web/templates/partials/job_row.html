@@ -1,0 +1,35 @@
+{{define "job_row"}}
+<tr id="job-{{.ID}}" sse-swap="job-{{.ID}}-status" hx-swap="outerHTML">
+  <td>{{template "status_badge" .Status}}</td>
+  <td class="job-title"><a href="/jobs/{{.ID}}">{{if .Metadata.Title}}{{.Metadata.Title}}{{else}}{{.InputPath}}{{end}}</a></td>
+  <td class="muted job-path">{{.InputPath}}</td>
+  <td class="job-progress">
+    {{if eq .Status "running"}}
+      <span sse-swap="job-{{.ID}}-progress" hx-swap="innerHTML">
+        {{template "progress" (progressOf .)}}
+      </span>
+    {{else if eq .Status "done"}}
+      <span class="muted">{{.OutputPath}}</span>
+    {{else if eq .Status "error"}}
+      <span class="err-text">{{.Error}}</span>
+    {{end}}
+  </td>
+  <td class="muted">{{.CreatedAt.Format "Jan 2 15:04"}}</td>
+  <td class="job-actions">
+    {{if or (eq .Status "pending") (eq .Status "running")}}
+    <form method="post" action="/jobs/{{.ID}}/cancel"><button class="btn-ghost btn-small">Cancel</button></form>
+    {{end}}
+    {{if or (eq .Status "error") (eq .Status "cancelled")}}
+    <form method="post" action="/jobs/{{.ID}}/retry"><button class="btn-ghost btn-small">Retry</button></form>
+    {{end}}
+  </td>
+</tr>
+{{end}}
+
+{{define "status_badge"}}
+{{if eq . "pending"}}<span class="badge badge-pending">◇ pending</span>
+{{else if eq . "running"}}<span class="badge badge-running">◐ converting</span>
+{{else if eq . "done"}}<span class="badge badge-done">◆ done</span>
+{{else if eq . "error"}}<span class="badge badge-err">✕ failed</span>
+{{else}}<span class="badge">– {{.}}</span>{{end}}
+{{end}}

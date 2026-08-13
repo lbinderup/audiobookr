@@ -1,0 +1,27 @@
+{{define "book_card"}}
+{{if .Err}}
+  <p class="muted">⚠ {{.Err}}</p>
+{{else}}
+  {{$path := .RelPath}}
+  <div class="candidate-grid">
+    <label class="candidate candidate-best">
+      <input type="radio" name="match:{{$path}}" value="{{.Book.ASIN}}|{{.Book.Region}}" checked>
+      {{if .Book.CoverURL}}<img src="{{.Book.CoverURL}}" alt="" loading="lazy">{{else}}<span class="cover-blank">📕</span>{{end}}
+      <span class="candidate-info">
+        <strong>{{.Book.Title}}</strong>
+        {{if .Book.Subtitle}}<span class="muted">{{.Book.Subtitle}}</span>{{end}}
+        <span>{{range $j, $a := .Book.Authors}}{{if $j}}, {{end}}{{$a}}{{end}}</span>
+        <span class="muted">
+          {{if .Book.Narrators}}read by {{range $j, $n := .Book.Narrators}}{{if $j}}, {{end}}{{$n}}{{end}}{{end}}
+        </span>
+        <span class="muted">
+          {{if .Book.Year}}{{.Book.Year}}{{end}}
+          {{if .Book.RuntimeMin}} · {{runtime .Book.RuntimeMin}}{{end}}
+          {{if .Book.SeriesName}} · {{.Book.SeriesName}} #{{.Book.SeriesPosition}}{{end}}
+        </span>
+        <span class="muted candidate-asin">{{.Book.ASIN}} ✓ verified</span>
+      </span>
+    </label>
+  </div>
+{{end}}
+{{end}}
