@@ -1,0 +1,27 @@
+# QNAP Container Station — paste this into Applications → Create.
+#
+# Adjust the four host paths and the PUID/PGID before deploying.
+# Find your ids over SSH with:   id <your-user>
+# Check who owns your media with: ls -ln /share/Multimedia/Audiobooks
+#
+# See docs/qnap.md for the full walkthrough.
+services:
+  audiobookr:
+    image: ghcr.io/lbinderup/audiobookr:latest
+    container_name: audiobookr
+    environment:
+      - PUID=1000                     # must match the owner of your media shares
+      - PGID=100                      # QNAP's "everyone" group is often 100
+      - TZ=Europe/Copenhagen
+    volumes:
+      # App data (database + job logs). Must be local disk, never a network mount.
+      - /share/Container/audiobookr/config:/config
+      # Where new audiobooks land (e.g. your download client's audiobook folder).
+      - /share/Multimedia/Downloads/Audiobooks:/input
+      # Your Plex/Prologue library — finished .m4b files are written here.
+      - /share/Multimedia/Audiobooks:/output
+      # Optional: only needed if you use the "move" cleanup mode.
+      - /share/Multimedia/Downloads/Processed:/completed
+    ports:
+      - "8684:8684"
+    restart: unless-stopped

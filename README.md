@@ -52,22 +52,19 @@ the queue and chapter UX it always deserved.
 
 ## Quick start
 
-```bash
-docker build -t audiobookr .
-```
-
-Then adapt [docker-compose.example.yml](docker-compose.example.yml):
+A multi-arch image (amd64 + arm64) is published to GitHub's container registry
+on every push to `main`:
 
 ```yaml
 services:
   audiobookr:
-    image: audiobookr:latest
+    image: ghcr.io/lbinderup/audiobookr:latest
     environment:
       - PUID=1000   # must read /input and write /output
       - PGID=1000
       - TZ=Europe/Copenhagen
     volumes:
-      - /appdata/audiobookr:/config
+      - /appdata/audiobookr:/config       # local disk only (not NFS/SMB)
       - /downloads/audiobooks:/input
       - /library/audiobooks:/output
       - /downloads/processed:/completed   # optional, for "move" cleanup
@@ -78,9 +75,14 @@ services:
 
 Open `http://nas:8684`, check **Settings**, then **Import → Match → Queue**.
 
-Multi-arch build (amd64 + arm64):
+- Full compose example: [docker-compose.example.yml](docker-compose.example.yml)
+- **QNAP / Container Station walkthrough: [docs/qnap.md](docs/qnap.md)**
+  (with [docker-compose.qnap.yml](docker-compose.qnap.yml))
+
+Building it yourself instead:
 
 ```bash
+docker build -t audiobookr .
 docker buildx build --platform linux/amd64,linux/arm64 -t audiobookr:latest .
 ```
 

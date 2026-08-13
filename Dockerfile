@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---------- build: static Go binary ----------
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 ARG TARGETOS TARGETARCH VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -31,14 +31,15 @@ RUN apk add --no-cache wget tar \
 FROM alpine:3.22
 RUN apk add --no-cache \
       ffmpeg \
-      fdkaac \
       libstdc++ \
       su-exec \
       shadow \
       tini \
       tzdata \
       ca-certificates \
-      wget
+      wget \
+ && (apk add --no-cache fdkaac \
+     || echo "NOTE: fdkaac unavailable for this arch; the native AAC encoder is used instead")
 COPY --from=tone /usr/local/bin/tone /usr/local/bin/tone
 COPY --from=build /out/audiobookr /app/audiobookr
 COPY docker/entrypoint.sh /entrypoint.sh
