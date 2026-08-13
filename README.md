@@ -62,7 +62,7 @@ services:
     environment:
       - PUID=1000   # must read /input and write /output
       - PGID=1000
-      - TZ=Europe/Copenhagen
+      - TZ=Etc/UTC
     volumes:
       - /appdata/audiobookr:/config       # local disk only (not NFS/SMB)
       - /downloads/audiobooks:/input
@@ -97,6 +97,8 @@ Environment variables (container-level):
 | Variable | Default | Purpose |
 |---|---|---|
 | `PUID` / `PGID` | `1000` | Runtime user; use ids that own your media |
+| `UMASK` | `002` | Permissions for created files (`002` = group-writable `664`/`775`; use `022` to keep them owner-only) |
+| `SUPPLEMENTARY_GIDS` | unset | Extra group ids for the runtime user, comma separated |
 | `TZ` | `Etc/UTC` | Timestamps in logs/UI |
 | `PORT` | `8684` | HTTP port |
 | `CONFIG_DIR` / `INPUT_DIR` / `OUTPUT_DIR` | `/config` `/input` `/output` | Volume mount points |

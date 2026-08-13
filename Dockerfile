@@ -47,6 +47,7 @@ RUN chmod +x /entrypoint.sh
 
 ENV PUID=1000 \
     PGID=1000 \
+    UMASK=002 \
     TZ=Etc/UTC \
     PORT=8684 \
     CONFIG_DIR=/config \

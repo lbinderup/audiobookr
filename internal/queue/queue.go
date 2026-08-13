@@ -134,7 +134,7 @@ func (m *Manager) run(ctx context.Context, job *store.Job) {
 	defer m.cancels.Delete(job.ID)
 
 	logPath := filepath.Join(m.logsDir, job.ID+".log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o666)
 	if err != nil {
 		m.log.Error("open job log", "job", job.ID, "err", err)
 	} else {

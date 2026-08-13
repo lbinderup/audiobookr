@@ -51,7 +51,7 @@ func (rc *RealConverter) Run(ctx context.Context, job *store.Job, report Progres
 	workDir := filepath.Join(rc.WorkRoot, job.ID)
 	stagingDir := filepath.Join(opts.OutputDir, ".audiobookr-work", job.ID)
 	for _, d := range []string{workDir, stagingDir} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
+		if err := os.MkdirAll(d, 0o777); err != nil {
 			return nil, fmt.Errorf("create %s: %w", d, err)
 		}
 	}
@@ -155,7 +155,7 @@ func (rc *RealConverter) Run(ctx context.Context, job *store.Job, report Progres
 	logf("chapters: %d entries from %q", len(resolved.Chapters), resolved.Source)
 
 	chaptersPath := filepath.Join(stagingDir, "book.chapters.txt")
-	if err := os.WriteFile(chaptersPath, []byte(chaptersTxt(resolved.Chapters)), 0o644); err != nil {
+	if err := os.WriteFile(chaptersPath, []byte(chaptersTxt(resolved.Chapters)), 0o666); err != nil {
 		return nil, err
 	}
 
@@ -168,7 +168,7 @@ func (rc *RealConverter) Run(ctx context.Context, job *store.Job, report Progres
 
 	// ---- move -----------------------------------------------------------
 	report("move", 0.96)
-	if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(finalPath), 0o777); err != nil {
 		return nil, err
 	}
 	if err := moveFile(stagedM4B, finalPath); err != nil {
@@ -281,7 +281,7 @@ func (rc *RealConverter) cleanupSource(job *store.Job, logf LogFunc) error {
 		if opts.CompletedDir == "" {
 			return errors.New("no completed directory configured")
 		}
-		if err := os.MkdirAll(opts.CompletedDir, 0o755); err != nil {
+		if err := os.MkdirAll(opts.CompletedDir, 0o777); err != nil {
 			return err
 		}
 		dst := filepath.Join(opts.CompletedDir, filepath.Base(src))
@@ -375,7 +375,7 @@ func moveTree(src, dst string) error {
 		rel, _ := filepath.Rel(src, p)
 		target := filepath.Join(dst, rel)
 		if fi.IsDir() {
-			return os.MkdirAll(target, 0o755)
+			return os.MkdirAll(target, 0o777)
 		}
 		return moveFile(p, target)
 	})

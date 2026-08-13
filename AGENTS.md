@@ -55,6 +55,11 @@ move → verify → cleanup).
   `{series_name}` folder; separators collapse. Substitution is single-pass so
   values containing `{token}` text are never re-substituted.
 - **`/config` must be local disk.** SQLite WAL breaks on NFS/SMB.
+- **Create files with permissive modes (`0o666` / `0o777`), never `0o644`.**
+  The container sets a umask (default 002) and the OS subtracts from these
+  modes; a umask can only clear bits, so hardcoding 0644 would make output
+  files non-group-writable no matter how the NAS is configured — which breaks
+  shared media libraries where a human account must also manage the files.
 - **Selections are deduped** (`scan.DedupeSelection`): choosing a folder and a
   file inside it is one job, not two. Enforced server-side, not just in the UI.
 

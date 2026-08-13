@@ -55,7 +55,7 @@ func writeConcatList(path string, files []*FileInfo) error {
 		escaped := strings.ReplaceAll(filepath.ToSlash(abs), "'", `'\''`)
 		fmt.Fprintf(&b, "file '%s'\n", escaped)
 	}
-	return os.WriteFile(path, []byte(b.String()), 0o644)
+	return os.WriteFile(path, []byte(b.String()), 0o666)
 }
 
 type ffmpegRunner struct {

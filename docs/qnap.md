@@ -34,12 +34,77 @@ permission errors.
 SSH into the NAS and check who owns the media:
 
 ```bash
-ls -ln /share/Multimedia/Audiobooks     # the numbers in cols 3 and 4 are uid and gid
+ls -ln /share/Media/Audiobooks     # the numbers in cols 3 and 4 are uid and gid
 id your-username                        # uid/gid for a specific account
 ```
 
 Use those numbers as `PUID`/`PGID`. On QTS the `everyone` group is commonly
 `100`; regular users start at `1000`. Don't guess — read them off the share.
+
+## 2b. The two-user problem (and how to end it for good)
+
+Most QNAP *arr setups end up with two identities that can't manage each
+other's files:
+
+- your **personal login** (typically uid 1000), which owns anything you copy
+  from your desktop over SMB;
+- a **service account** used by the containers (often uid 1001), which owns
+  everything the *arr apps download and sort.
+
+Each can *read* the other's files but not delete or rename them, so Sonarr
+chokes on files you uploaded, and you can't clean up what Sonarr produced.
+
+The cause is that files get created `rw-r--r--` (644): only the owner can
+write. Ownership differs, so nobody can write to everything. The fix has three
+parts, and **all three are required** — this is why the usual "just set PUID"
+advice doesn't stick.
+
+**1. A shared group both identities belong to.**
+Control Panel → Privilege → User Groups → create `media`, then add both your
+personal account and the container service account to it. (Or reuse an
+existing common group — `everyone` is gid 100.) Note its gid:
+`getent group media`.
+
+**2. Apply it to the libraries, with the setgid bit so it sticks.**
+Over SSH, per media share:
+
+```bash
+LIB=/share/Media/Audiobooks      # adjust to your share
+chgrp -R media "$LIB"
+chmod -R g+rwX "$LIB"
+find "$LIB" -type d -exec chmod g+s {} +
+```
+
+`g+rwX` grants group write (capital `X` = execute on directories only).
+The **setgid bit** (`g+s`) is the important part: new files and folders created
+inside inherit the `media` group instead of the creator's primary group, so
+the arrangement survives everything created from then on.
+
+**3. Make every writer create group-writable files — `umask 002`.**
+This is the step people miss. A umask can only *remove* permission bits, so
+setgid alone still yields 644 files that the group cannot write.
+
+- audiobookr: `UMASK=002` (already the default in this image).
+- linuxserver.io *arr containers: add `- UMASK=002` to their environment.
+- Your SMB uploads: QNAP creates files per the share's mask. If desktop
+  uploads still land as 644, set `create mask = 0664` / `directory mask = 0775`
+  for that share (Control Panel → Network & File Services → SMB → Advanced
+  Options, or the per-share config), so files you copy in are group-writable too.
+
+After this, both identities can fully manage every file, no more `chown` over
+SSH. Existing files need the one-time `chmod`/`chgrp` above; everything created
+afterwards inherits it automatically.
+
+> Which PUID should audiobookr use? Whichever account already owns your media —
+> i.e. the same service account your other *arr apps run as. It is the group
+> and umask, not the uid, that let your personal account co-manage the results.
+> If one group can't cover everything, `SUPPLEMENTARY_GIDS=100,1000` adds extra
+> group memberships to the container's user.
+
+> **Caveat:** if the share has QNAP's *Advanced Folder Permissions* or Windows
+> ACLs enabled, those can override POSIX permissions and silently undo the
+> above. Check Control Panel → Privilege → Shared Folders → Edit Permissions
+> before debugging further.
 
 ## 3. Create the application
 
@@ -49,7 +114,7 @@ Container Station → **Applications** → **Create** → give it the name
 
 - the four host paths (`/share/...`) to match your actual shares,
 - `PUID` / `PGID` from step 2,
-- `TZ` if you're not in Copenhagen.
+- `TZ` to your timezone.
 
 Notes on the paths:
 
@@ -93,6 +158,12 @@ To pin a specific version instead of tracking `latest`, tag a release
 match your share ownership. Recheck step 2. The container deliberately never
 chowns `/input` or `/output`; it adapts to your ids instead of rewriting your
 library's permissions.
+
+**Converted files land where my personal account can't delete them** — the
+container is writing 644 files. Confirm `UMASK=002` is set on the container and
+that the output folder has the shared group plus its setgid bit (step 2b).
+Verify what actually got written with `ls -l` — you want `-rw-rw-r--` and a
+group both accounts belong to.
 
 **"database is locked" or corruption on startup** — `/config` is on a network
 mount. Move it to local storage.

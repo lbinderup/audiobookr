@@ -7,7 +7,8 @@ services:
     environment:
       - PUID=1000            # must be able to read /input and write /output
       - PGID=1000
-      - TZ=Europe/Copenhagen
+      - UMASK=002            # group-writable output; see docs/qnap.md
+      - TZ=Etc/UTC
     volumes:
       - /path/to/appdata/audiobookr:/config   # SQLite db + logs; local storage only (not NFS/SMB)
       - /path/to/downloads/audiobooks:/input  # where raw audiobooks arrive

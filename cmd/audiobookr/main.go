@@ -78,7 +78,7 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	for _, dir := range []string{cfg.ConfigDir, cfg.LogsDir(), cfg.WorkDir(), cfg.InputDir, cfg.OutputDir} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o777); err != nil {
 			log.Error("create directory", "dir", dir, "err", err)
 			os.Exit(1)
 		}
