@@ -26,6 +26,12 @@ type SearchResult struct {
 	RuntimeMin int
 	CoverURL   string
 	Score      int // match confidence, higher is better (set by internal/match)
+
+	// Comparison against the local audio's duration, filled in by
+	// internal/match when a runtime is known. RuntimeMatch is one of
+	// "" (unknown), "exact", "close", "near", "off".
+	RuntimeDeltaMin int
+	RuntimeMatch    string
 }
 
 // Book is the full metadata snapshot used for tagging.

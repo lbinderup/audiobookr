@@ -74,6 +74,11 @@ type candidatesData struct {
 	Region  string
 	Results []metadata.SearchResult
 	Err     string
+
+	// LocalRuntimeMin is the measured length of the selected audio (0 when
+	// unknown); AutoSelect marks the top result as safe to pre-tick.
+	LocalRuntimeMin int
+	AutoSelect      bool
 }
 
 // handleMatchCandidates searches the catalog and renders candidate cards.
@@ -98,8 +103,13 @@ func (s *Server) handleMatchCandidates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
+
+	// Measure the actual audio so runtime can inform the ranking. Unknown
+	// (0) simply falls back to name-only matching.
+	data.LocalRuntimeMin = s.LocalRuntimeMin(ctx, data.RelPath)
+
 	results, err := s.provider().Search(ctx, query)
 	if err != nil {
 		data.Err = "Search failed: " + err.Error()
@@ -108,7 +118,14 @@ func (s *Server) handleMatchCandidates(w http.ResponseWriter, r *http.Request) {
 		if titleHint == "" {
 			titleHint = query.Keywords
 		}
-		results = match.Score(results, titleHint, query.Author)
+		signals := match.Signals{
+			Title:      titleHint,
+			Author:     query.Author,
+			RuntimeMin: data.LocalRuntimeMin,
+			Language:   match.LanguageForRegion(region),
+		}
+		results = match.Score(results, signals)
+		data.AutoSelect = match.AutoSelect(results, signals)
 		if len(results) > 8 {
 			results = results[:8]
 		}

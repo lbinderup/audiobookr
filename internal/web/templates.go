@@ -102,9 +102,23 @@ var funcMap = template.FuncMap{
 	"runtime":   humanRuntime,
 	"add":       func(a, b int) int { return a + b },
 	"sub":       func(a, b int) int { return a - b },
+	"deltaMin":  deltaMinutes,
 	"progressOf": func(j *store.Job) progressData {
 		return progressData{Stage: j.Stage, Percent: int(j.Progress * 100)}
 	},
+}
+
+// deltaMinutes renders a signed runtime difference as "12 min longer" or
+// "1 hr 5 min shorter", from the candidate's point of view.
+func deltaMinutes(delta int) string {
+	word := "longer"
+	if delta < 0 {
+		delta, word = -delta, "shorter"
+	}
+	if delta == 0 {
+		return "same length"
+	}
+	return humanRuntime(delta) + " " + word
 }
 
 // humanRuntime renders minutes as "10 hrs 12 min".

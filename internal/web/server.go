@@ -26,15 +26,18 @@ type Server struct {
 	provMu  sync.Mutex
 	prov    metadata.Provider
 	provURL string
+
+	durations *durationCache
 }
 
 func New(cfg config.Config, st *store.Store, mgr *queue.Manager, broker *queue.Broker) *http.Server {
 	s := &Server{
-		cfg:    cfg,
-		store:  st,
-		render: newRenderer(cfg.Dev),
-		queue:  mgr,
-		broker: broker,
+		cfg:       cfg,
+		store:     st,
+		render:    newRenderer(cfg.Dev),
+		queue:     mgr,
+		broker:    broker,
+		durations: newDurationCache(),
 	}
 	return &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),

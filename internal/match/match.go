@@ -64,12 +64,52 @@ func SplitAuthorTitle(normalized string) (author, title string) {
 	return "", normalized
 }
 
-// Score ranks results against the query hint (bragibooks' weighting: title
-// distance ×2, author distance ×10, catalog relevance as index penalty) and
-// sorts best-first.
-func Score(results []metadata.SearchResult, titleHint, authorHint string) []metadata.SearchResult {
-	titleHint = strings.ToLower(asciiFold.Replace(titleHint))
-	authorHint = strings.ToLower(asciiFold.Replace(authorHint))
+// Signals are what a candidate is judged against.
+type Signals struct {
+	Title  string // expected title (from the folder name or user's search)
+	Author string // expected author, may be empty
+	// RuntimeMin is the measured duration of the files to be converted;
+	// 0 when unknown.
+	RuntimeMin int
+	// Language expected of the edition, e.g. "english". Derived from the
+	// search region; empty disables the check.
+	Language string
+}
+
+// LanguageForRegion maps an Audible storefront to the language its listeners
+// normally want, so a foreign-language edition of the right book doesn't
+// outrank the edition actually being converted.
+func LanguageForRegion(region string) string {
+	switch strings.ToLower(region) {
+	case "us", "uk", "au", "ca", "in":
+		return "english"
+	case "de":
+		return "german"
+	case "fr":
+		return "french"
+	case "es":
+		return "spanish"
+	case "it":
+		return "italian"
+	case "jp":
+		return "japanese"
+	}
+	return ""
+}
+
+// Score ranks results against the signals (bragibooks' weighting: title
+// distance ×2, author distance ×10, catalog relevance as index penalty),
+// adjusts for how closely each candidate's published runtime matches the
+// local audio, penalizes the wrong language, and sorts best-first.
+//
+// Runtime is a strong signal — it separates abridged from unabridged editions
+// and dramatizations from straight readings — but it is deliberately weighted
+// below the author match, since a coincidental runtime should never outrank
+// the right author.
+func Score(results []metadata.SearchResult, sig Signals) []metadata.SearchResult {
+	titleHint := strings.ToLower(asciiFold.Replace(sig.Title))
+	authorHint := strings.ToLower(asciiFold.Replace(sig.Author))
+	localMin := sig.RuntimeMin
 	for i := range results {
 		r := &results[i]
 		score := 100
@@ -86,10 +126,89 @@ func Score(results []metadata.SearchResult, titleHint, authorHint string) []meta
 			score -= 10 * best
 		}
 		score -= i // preserve some of the catalog's relevance ordering
+		score += classifyRuntime(r, localMin)
+		if !languageMatches(sig.Language, r.Language) {
+			score -= 25
+		}
 		r.Score = score
 	}
 	sort.SliceStable(results, func(i, j int) bool { return results[i].Score > results[j].Score })
 	return results
+}
+
+// languageMatches is permissive: unknown on either side is not a mismatch,
+// so a provider that omits the field never causes a penalty.
+func languageMatches(want, got string) bool {
+	if want == "" || got == "" {
+		return true
+	}
+	return strings.EqualFold(want, got)
+}
+
+// classifyRuntime records how far the candidate's runtime is from the local
+// audio and returns the score adjustment.
+func classifyRuntime(r *metadata.SearchResult, localMin int) int {
+	if localMin <= 0 || r.RuntimeMin <= 0 {
+		r.RuntimeMatch, r.RuntimeDeltaMin = "", 0
+		return 0
+	}
+	delta := r.RuntimeMin - localMin
+	r.RuntimeDeltaMin = delta
+	if delta < 0 {
+		delta = -delta
+	}
+	pct := float64(delta) / float64(localMin)
+
+	switch {
+	case delta <= 1 || pct <= 0.005:
+		r.RuntimeMatch = "exact"
+		return 25
+	case pct <= 0.02:
+		r.RuntimeMatch = "close"
+		return 12
+	case pct <= 0.05:
+		r.RuntimeMatch = "near"
+		return 3
+	case pct <= 0.15:
+		r.RuntimeMatch = "off"
+		return -12
+	default:
+		// A different edition, an abridgement, or the wrong book entirely.
+		r.RuntimeMatch = "off"
+		return -30
+	}
+}
+
+// AutoSelect reports whether the top result is safe to pre-select for the
+// user. It is intentionally strict: the runtime must match almost exactly,
+// the title must be a near-perfect hit, and the runner-up must be clearly
+// worse. Anything less and the user chooses, since a silently wrong
+// pre-selection is far more costly than one extra click.
+func AutoSelect(results []metadata.SearchResult, sig Signals) bool {
+	if len(results) == 0 || sig.Title == "" {
+		return false
+	}
+	best := results[0]
+	if best.RuntimeMatch != "exact" {
+		return false
+	}
+	// Never auto-select an edition in a language the user probably can't
+	// listen to, however well the runtime happens to line up.
+	if sig.Language != "" && !strings.EqualFold(sig.Language, best.Language) {
+		return false
+	}
+	hint := strings.ToLower(asciiFold.Replace(sig.Title))
+	if fuzzyDistance(hint, strings.ToLower(asciiFold.Replace(best.Title))) > 2 {
+		return false
+	}
+	// Ambiguous when a rival scores nearly as well (e.g. two editions with
+	// the same runtime), or when another candidate also matches exactly.
+	if len(results) > 1 {
+		if best.Score-results[1].Score < 15 || results[1].RuntimeMatch == "exact" {
+			return false
+		}
+	}
+	return true
 }
 
 // fuzzyDistance is Levenshtein softened for subtitles: a candidate that

@@ -413,6 +413,19 @@ details.tree-dir[open] > summary::before { transform: rotate(90deg); }
 .candidate-best { background: #201d15; }
 .candidate-asin { font-family: ui-monospace, monospace; font-size: 0.75rem; }
 
+.candidates-note { font-size: 0.82rem; margin: 0 0 0.5rem; }
+.rt-badge {
+  font-size: 0.78rem;
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+  align-self: flex-start;
+  border: 1px solid;
+}
+.rt-exact { color: var(--ok); border-color: var(--ok); background: #1d2b24; }
+.rt-close { color: var(--ok); border-color: var(--border); background: transparent; }
+.rt-near  { color: var(--text-muted); border-color: var(--border); background: transparent; }
+.rt-off   { color: var(--warn); border-color: var(--border); background: transparent; }
+
 /* Queue */
 .queue-head { display: flex; align-items: center; justify-content: space-between; }
 .badge-pending { color: var(--text-muted); border-color: var(--border); }

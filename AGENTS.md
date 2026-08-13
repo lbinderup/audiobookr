@@ -41,6 +41,14 @@ move → verify → cleanup).
 - **Chapter decisions are computed in exactly one place.** The match screen's
   verdict line calls `pipeline.PlanChapters`, which calls the same
   `resolveChapters` the conversion runs. Never fork this logic for display.
+- **Candidate ranking weighs title, author, runtime and language**
+  (`match.Signals`). Runtime is measured from the actual files and separates
+  abridged/unabridged editions, but is weighted *below* the author match so a
+  coincidental duration never outranks the right author. `match.AutoSelect`
+  pre-ticks a candidate only when runtime is near-exact, the title is a
+  near-perfect hit, the language matches the region, and the runner-up is
+  clearly worse — a confidently wrong pre-selection costs far more than a
+  click, so keep it strict.
 - **Multi-file input must never produce zero chapters.** Fallback order is
   provider (runtime-validated) → file's own → file boundaries → single chapter.
 - **ffmpeg concat lists need absolute paths.** The demuxer resolves relative
