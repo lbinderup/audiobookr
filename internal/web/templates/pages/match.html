@@ -50,7 +50,7 @@
           </select>
           <select name="chapters:{{.RelPath}}" class="match-chapters" title="Which chapter timings to embed in the m4b">
             <option value="">Chapters: auto</option>
-            <option value="existing">Chapters: keep file's own</option>
+            <option value="existing">{{if gt .Files 1}}Chapters: one per file (boundaries){{else}}Chapters: keep file's own{{end}}</option>
             <option value="provider">Chapters: force Audible's</option>
           </select>
           <button type="button" class="btn-ghost"
@@ -95,13 +95,35 @@
         chosen === 0 ? 'No matches confirmed' : chosen + ' of ' + total + ' matched';
       document.getElementById('queue-btn').disabled = chosen === 0;
     }
-    // Chapter preview: seek the panel's player to a chapter start. Playback
-    // starting mid-sentence there means the timings don't fit this file.
+    // Chapter preview: seek the panel's player to a global offset. For
+    // multi-file selections the panel carries a data-files map of cumulative
+    // boundaries, so an offset anywhere in the book resolves to the right
+    // source file and the position inside it — this is how Audible's chapter
+    // timings can be auditioned across a folder of mp3s.
     function seekPreview(btn) {
-      const audio = btn.closest('.chapter-preview')?.querySelector('audio');
+      const panel = btn.closest('.chapter-preview');
+      const audio = panel?.querySelector('audio');
       if (!audio) return;
-      audio.currentTime = (+btn.dataset.ms) / 1000;
-      audio.play();
+      const ms = +btn.dataset.ms;
+      const filesAttr = panel.dataset.files;
+      if (!filesAttr) { // single file: offsets are already local
+        audio.currentTime = ms / 1000;
+        audio.play();
+        return;
+      }
+      const files = JSON.parse(filesAttr);
+      const f = files.find(x => ms >= x.start && ms < x.end) || files[files.length - 1];
+      const local = Math.max(0, (ms - f.start) / 1000);
+      const seek = () => { audio.currentTime = local; audio.play(); };
+      if (audio.dataset.rel !== f.rel) {
+        audio.dataset.rel = f.rel;
+        audio.src = '/preview/audio?path=' + encodeURIComponent(f.rel);
+        audio.addEventListener('loadedmetadata', seek, { once: true });
+      } else if (audio.readyState >= 1) {
+        seek();
+      } else {
+        audio.addEventListener('loadedmetadata', seek, { once: true });
+      }
     }
     // The preview button loads once (htmx click-once) and folds after that —
     // the file's chapters don't change, so re-fetching would only lose state.

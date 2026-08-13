@@ -1,17 +1,40 @@
 {{define "chapter_preview"}}
-<div class="chapter-preview">
+<div class="chapter-preview" {{if .Multi}}data-files="{{.FilesJSON}}"{{end}}>
   {{if .Err}}
     <p class="muted">⚠ {{.Err}}</p>
   {{else}}
+    {{$first := index .Files 0}}
     {{if .Playable}}
-    <audio controls preload="metadata" src="/preview/audio?path={{.File | urlquery}}"></audio>
+    <audio controls preload="metadata" data-rel="{{$first.Rel}}"
+           src="/preview/audio?path={{$first.Rel | urlquery}}"></audio>
     {{else}}
-    <p class="muted">This format can't be played in a browser, but the chapter list below is still shown.</p>
+    <p class="muted">This format can't be played in a browser, but the lists below are still shown.</p>
     {{end}}
-    <p class="hint">Click a chapter to jump the player there and hear whether it lines up.</p>
+    <p class="hint">Click anything below to jump the player there and hear whether it lines up.</p>
 
     <div class="chapter-columns">
       <div>
+        {{if .Multi}}
+        <h3>File boundaries <span class="muted">({{len .Files}} files · {{.Duration}})</span></h3>
+        <div class="chapter-list">
+          {{range .Files}}
+          <div class="file-row">
+            <button type="button" class="chapter-btn" data-ms="{{.StartMs}}" onclick="seekPreview(this)"
+                    title="Play the start of this file ({{.Duration}} long)">
+              <span class="chapter-stamp">{{.Stamp}}</span> {{.Name}}
+            </button>
+            <button type="button" class="chapter-btn chapter-end" data-ms="{{.EndSeekMs}}" onclick="seekPreview(this)"
+                    title="Play the last seconds of this file">end</button>
+          </div>
+          {{end}}
+        </div>
+        <p class="hint">Each file's start is where a boundary chapter would begin. If starts land
+          mid-sentence, the files were split arbitrarily — prefer Audible's chapters. If they begin
+          cleanly, boundaries are safe.</p>
+        <button type="button" class="btn-ghost btn-small use-chapters" onclick="useChapters(this, 'existing')">
+          Use file boundaries
+        </button>
+        {{else}}
         <h3>Embedded chapters {{if .Chapters}}<span class="muted">({{len .Chapters}} · {{.Duration}})</span>{{end}}</h3>
         {{if .Chapters}}
         <div class="chapter-list">
@@ -26,6 +49,7 @@
         </button>
         {{else}}
         <p class="muted">No chapters embedded in this file.</p>
+        {{end}}
         {{end}}
       </div>
 

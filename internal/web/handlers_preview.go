@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -58,62 +59,114 @@ type previewChapter struct {
 	Stamp   string // HH:MM:SS
 }
 
+// previewFile is one source file in a multi-file selection: its start offset
+// in the merged book is where a boundary chapter would begin.
+type previewFile struct {
+	Index     int
+	Name      string
+	Rel       string // input-relative, for the streaming URL
+	StartMs   int64
+	Stamp     string
+	Duration  string
+	EndSeekMs int64 // a few seconds before the file ends
+	Playable  bool
+}
+
 type previewData struct {
 	RelPath    string
-	File       string // the single audio file being previewed (rel path)
-	Playable   bool
+	Multi      bool
+	Files      []previewFile
+	FilesJSON  string // [{"rel","start","end"}] for the seek-across-files JS
+	Playable   bool   // first file is browser-playable
 	DurationMs int64
 	Duration   string
-	Chapters   []previewChapter
+	Chapters   []previewChapter // single-file only: chapters already embedded
 	Err        string
 }
 
 // handleMatchPreview renders the chapter-preview panel for one match item:
-// an audio player plus the file's embedded chapters as seek buttons.
-// Only single-file selections get a player (multi-file books derive their
-// chapters from file boundaries, which are aligned by construction).
+// an audio player plus seekable chapter/file lists. Single-file selections
+// list the file's embedded chapters; multi-file selections list each file's
+// start (the would-be boundary chapters), so the user can hear whether files
+// begin at natural breaks or were split arbitrarily mid-sentence.
 func (s *Server) handleMatchPreview(w http.ResponseWriter, r *http.Request) {
 	set := s.settings()
 	rel := r.URL.Query().Get("path")
 	data := previewData{RelPath: rel}
 
+	fail := func(msg string) {
+		data.Err = msg
+		s.render.partial(w, "match", "chapter_preview", data)
+	}
+
 	files, err := scan.CollectAudioFiles(set.InputDir, rel)
 	if err != nil {
-		data.Err = err.Error()
-		s.render.partial(w, "match", "chapter_preview", data)
+		fail(err.Error())
 		return
 	}
-	if len(files) != 1 {
-		data.Err = "Preview is available for single-file books; this selection merges multiple files, so chapters follow the file boundaries."
-		s.render.partial(w, "match", "chapter_preview", data)
+	if len(files) > 200 {
+		fail(fmt.Sprintf("This selection has %d files — too many to preview individually.", len(files)))
 		return
 	}
 
-	// files[0] is absolute; re-derive the input-relative path for the
-	// streaming URL.
-	fileRel, err := filepath.Rel(filepath.Clean(set.InputDir), files[0])
-	if err != nil {
-		data.Err = "cannot resolve file path"
-		s.render.partial(w, "match", "chapter_preview", data)
-		return
-	}
-	data.File = filepath.ToSlash(fileRel)
-	_, data.Playable = audioContentTypes[strings.ToLower(filepath.Ext(files[0]))]
-
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	info, err := pipeline.ProbeFile(ctx, s.cfg.FFprobePath, files[0])
-	if err != nil {
-		data.Err = "ffprobe failed: " + err.Error()
-		s.render.partial(w, "match", "chapter_preview", data)
-		return
+
+	type boundary struct {
+		Rel   string `json:"rel"`
+		Start int64  `json:"start"`
+		End   int64  `json:"end"`
 	}
-	data.DurationMs = info.DurationMs
-	data.Duration = msClock(info.DurationMs)
-	for _, c := range info.Chapters {
-		data.Chapters = append(data.Chapters, previewChapter{
-			Title: c.Title, StartMs: c.StartMs, Stamp: msClock(c.StartMs),
+	inputRoot := filepath.Clean(set.InputDir)
+	var bounds []boundary
+	var offset int64
+	for i, f := range files {
+		info, err := pipeline.ProbeFile(ctx, s.cfg.FFprobePath, f)
+		if err != nil {
+			fail("ffprobe failed: " + err.Error())
+			return
+		}
+		fileRel, err := filepath.Rel(inputRoot, f)
+		if err != nil {
+			fail("cannot resolve file path")
+			return
+		}
+		frel := filepath.ToSlash(fileRel)
+		_, playable := audioContentTypes[strings.ToLower(filepath.Ext(f))]
+
+		endSeek := offset + info.DurationMs - 6000
+		if endSeek < offset {
+			endSeek = offset
+		}
+		data.Files = append(data.Files, previewFile{
+			Index:     i + 1,
+			Name:      filepath.Base(f),
+			Rel:       frel,
+			StartMs:   offset,
+			Stamp:     msClock(offset),
+			Duration:  msClock(info.DurationMs),
+			EndSeekMs: endSeek,
+			Playable:  playable,
 		})
+		bounds = append(bounds, boundary{Rel: frel, Start: offset, End: offset + info.DurationMs})
+
+		if len(files) == 1 {
+			for _, c := range info.Chapters {
+				data.Chapters = append(data.Chapters, previewChapter{
+					Title: c.Title, StartMs: c.StartMs, Stamp: msClock(c.StartMs),
+				})
+			}
+		}
+		offset += info.DurationMs
+	}
+
+	data.Multi = len(files) > 1
+	data.DurationMs = offset
+	data.Duration = msClock(offset)
+	data.Playable = data.Files[0].Playable
+	if data.Multi {
+		raw, _ := json.Marshal(bounds)
+		data.FilesJSON = string(raw)
 	}
 	s.render.partial(w, "match", "chapter_preview", data)
 }
