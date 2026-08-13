@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,9 +15,13 @@ import (
 // Zero rows is a valid state: Defaults() supplies every value until the user
 // first saves.
 type Settings struct {
-	InputDir          string `key:"input_dir"`
-	OutputDir         string `key:"output_dir"`
-	CompletedDir      string `key:"completed_dir"`
+	InputDir  string `key:"input_dir"`
+	OutputDir string `key:"output_dir"`
+	// CompletedSubdir is a path RELATIVE to the mapped /completed volume
+	// (empty = the volume root). It is deliberately not an absolute path:
+	// an absolute one could point inside the container's own filesystem,
+	// where moved files would vanish when the container is recreated.
+	CompletedSubdir   string `key:"completed_subdir"`
 	CleanupMode       string `key:"cleanup_mode"` // move|delete|leave
 	PathTemplate      string `key:"path_template"`
 	MetadataProvider  string `key:"metadata_provider"`
@@ -38,7 +43,7 @@ func Defaults(inputDir, outputDir string) Settings {
 	return Settings{
 		InputDir:          inputDir,
 		OutputDir:         outputDir,
-		CompletedDir:      "",
+		CompletedSubdir:   "",
 		CleanupMode:       "leave",
 		PathTemplate:      "{author}/{series_name}/{title}/{title} [{asin}]",
 		MetadataProvider:  "audnexus",
@@ -77,8 +82,8 @@ func (s *Store) GetSettings(def Settings) (Settings, error) {
 	if v, ok := got["output_dir"]; ok {
 		out.OutputDir = v
 	}
-	if v, ok := got["completed_dir"]; ok {
-		out.CompletedDir = v
+	if v, ok := got["completed_subdir"]; ok {
+		out.CompletedSubdir = v
 	}
 	if v, ok := got["cleanup_mode"]; ok {
 		out.CleanupMode = v
@@ -122,7 +127,7 @@ func (s *Store) SaveSettings(set Settings) error {
 	kv := map[string]string{
 		"input_dir":          set.InputDir,
 		"output_dir":         set.OutputDir,
-		"completed_dir":      set.CompletedDir,
+		"completed_subdir":   set.CompletedSubdir,
 		"cleanup_mode":       set.CleanupMode,
 		"path_template":      set.PathTemplate,
 		"metadata_provider":  set.MetadataProvider,
@@ -159,12 +164,8 @@ func (set Settings) Validate() []string {
 	if !contains(CleanupModes, set.CleanupMode) {
 		errs = append(errs, fmt.Sprintf("Cleanup mode must be one of %s.", strings.Join(CleanupModes, ", ")))
 	}
-	if set.CleanupMode == "move" {
-		if strings.TrimSpace(set.CompletedDir) == "" {
-			errs = append(errs, "Cleanup mode \"move\" requires a completed directory.")
-		} else if isWithin(set.CompletedDir, set.InputDir) {
-			errs = append(errs, "The completed directory must not be inside the input directory — processed sources would reappear in the import screen.")
-		}
+	if err := ValidateCompletedSubdir(set.CompletedSubdir); err != nil {
+		errs = append(errs, "Completed subfolder: "+err.Error())
 	}
 	if err := pathtmpl.Validate(set.PathTemplate); err != nil {
 		errs = append(errs, fmt.Sprintf("Path template: %v.", err))
@@ -188,6 +189,38 @@ func (set Settings) Validate() []string {
 		errs = append(errs, "Encoder must be \"aac\" or \"fdkaac\".")
 	}
 	return errs
+}
+
+// ValidateCompletedSubdir enforces that the value is a relative path that
+// stays inside the mapped /completed volume. Absolute paths are rejected
+// outright: they would resolve inside the container's own filesystem, where
+// moved originals are lost the next time the container is recreated.
+func ValidateCompletedSubdir(sub string) error {
+	sub = strings.TrimSpace(sub)
+	if sub == "" {
+		return nil // the volume root itself
+	}
+	if strings.ContainsAny(sub, `\:`) {
+		return fmt.Errorf("use forward slashes, and no drive letters (got %q)", sub)
+	}
+	if strings.HasPrefix(sub, "/") {
+		return fmt.Errorf("must be a subfolder name, not an absolute path — drop the leading %q", "/")
+	}
+	clean := path.Clean(sub)
+	if clean == ".." || strings.HasPrefix(clean, "../") || clean == "." {
+		return fmt.Errorf("must stay inside the completed volume (got %q)", sub)
+	}
+	return nil
+}
+
+// CompletedPath resolves the configured subfolder against the mapped
+// completed volume, returning the absolute directory to move sources into.
+func (set Settings) CompletedPath(completedRoot string) string {
+	sub := strings.TrimSpace(set.CompletedSubdir)
+	if sub == "" {
+		return filepath.Clean(completedRoot)
+	}
+	return filepath.Join(completedRoot, filepath.FromSlash(path.Clean(sub)))
 }
 
 // isWithin reports whether child is lexically inside parent (or equal).

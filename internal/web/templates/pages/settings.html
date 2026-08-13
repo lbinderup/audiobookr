@@ -10,6 +10,16 @@
   </div>
   {{end}}
 
+  {{if .Unmapped}}
+  <div class="flash flash-warn" role="alert">
+    <strong>Unmapped volumes</strong>
+    <ul class="error-list">
+      {{range .Unmapped}}<li><code>{{.Name}}</code> isn't mapped — {{.Why}}</li>{{end}}
+    </ul>
+    Add the missing <code>volumes:</code> entries to your compose file and recreate the container.
+  </div>
+  {{end}}
+
   <form method="post" action="/settings" class="settings-form">
     <fieldset>
       <legend>Directories</legend>
@@ -46,9 +56,26 @@
       </select>
       <p class="hint">Can be overridden per book when queueing.</p>
 
-      <label for="completed_dir">Completed directory</label>
-      <input type="text" id="completed_dir" name="completed_dir" value="{{.Settings.CompletedDir}}" spellcheck="false">
-      <p class="hint">Only used by "move". Must be outside the input directory.</p>
+      <label for="completed_subdir">Completed subfolder</label>
+      <div class="path-prefixed">
+        <span class="path-prefix">{{.CompletedRoot}}/</span>
+        <input type="text" id="completed_subdir" name="completed_subdir"
+               value="{{.Settings.CompletedSubdir}}" spellcheck="false"
+               placeholder="(volume root)" autocomplete="off">
+      </div>
+      <p class="hint">
+        Only used by "move". This is a folder <em>inside</em> the mapped
+        <code>{{.CompletedRoot}}</code> volume — leave it empty to move sources straight
+        into the volume root. Absolute paths aren't accepted: they would point inside the
+        container itself, and anything moved there is lost when the container is recreated.
+      </p>
+      <p class="hint">
+        Sources will be moved to <code class="path-preview">{{.CompletedResolved}}</code>
+        {{if not .CompletedMounted}}
+          <br><span class="warn-text">⚠ {{.CompletedRoot}} doesn't exist — map a volume to it
+          before using the "move" cleanup mode.</span>
+        {{end}}
+      </p>
     </fieldset>
 
     <fieldset>

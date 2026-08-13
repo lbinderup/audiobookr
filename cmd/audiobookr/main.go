@@ -77,10 +77,26 @@ func main() {
 	cfg := config.Load(version)
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	for _, dir := range []string{cfg.ConfigDir, cfg.LogsDir(), cfg.WorkDir(), cfg.InputDir, cfg.OutputDir} {
+	// The app owns /config, so always create it. The media directories are
+	// volume mount points: creating them would mask a forgotten -v mapping
+	// and silently write into the container's own filesystem, where the data
+	// is lost on recreate. Missing means unmapped, and the UI reports it.
+	// (On a dev machine there are no volumes, so create them for convenience.)
+	dirs := []string{cfg.ConfigDir, cfg.LogsDir(), cfg.WorkDir()}
+	if cfg.Dev {
+		dirs = append(dirs, cfg.InputDir, cfg.OutputDir, cfg.CompletedDir)
+	}
+	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o777); err != nil {
 			log.Error("create directory", "dir", dir, "err", err)
 			os.Exit(1)
+		}
+	}
+	for _, v := range []struct{ name, path string }{
+		{"input", cfg.InputDir}, {"output", cfg.OutputDir}, {"completed", cfg.CompletedDir},
+	} {
+		if info, err := os.Stat(v.path); err != nil || !info.IsDir() {
+			log.Warn("volume not mapped", "volume", v.name, "path", v.path)
 		}
 	}
 

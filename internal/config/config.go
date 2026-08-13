@@ -12,13 +12,14 @@ import (
 )
 
 type Config struct {
-	Port      int
-	ConfigDir string // db, logs, work dir
-	InputDir  string
-	OutputDir string
-	Converter string // "real" | "fake"
-	Dev       bool   // reload templates from disk per request
-	Version   string
+	Port         int
+	ConfigDir    string // db, logs, work dir
+	InputDir     string
+	OutputDir    string
+	CompletedDir string // mount root for the "move" cleanup mode
+	Converter    string // "real" | "fake"
+	Dev          bool   // reload templates from disk per request
+	Version      string
 
 	// External binaries (real converter). Bare names resolve via PATH.
 	FFmpegPath  string
@@ -62,12 +63,14 @@ func Load(version string) Config {
 		cfg.ConfigDir = envStr("CONFIG_DIR", "/config")
 		cfg.InputDir = envStr("INPUT_DIR", "/input")
 		cfg.OutputDir = envStr("OUTPUT_DIR", "/output")
+		cfg.CompletedDir = envStr("COMPLETED_DIR", "/completed")
 	} else {
 		// Developer machine: keep everything under ./devdata so `go run` works
 		// without any setup.
 		cfg.ConfigDir = envStr("CONFIG_DIR", filepath.Join("devdata", "config"))
 		cfg.InputDir = envStr("INPUT_DIR", filepath.Join("devdata", "input"))
 		cfg.OutputDir = envStr("OUTPUT_DIR", filepath.Join("devdata", "output"))
+		cfg.CompletedDir = envStr("COMPLETED_DIR", filepath.Join("devdata", "completed"))
 	}
 	return cfg
 }

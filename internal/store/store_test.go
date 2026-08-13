@@ -45,7 +45,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	want := def
 	want.OutputDir = "/mnt/audiobooks"
 	want.CleanupMode = "move"
-	want.CompletedDir = "/mnt/processed"
+	want.CompletedSubdir = "audiobooks/done"
 	want.WorkerConcurrency = 2
 	want.BitrateKbps = 128
 	want.WriteChaptersTxt = false
@@ -66,9 +66,9 @@ func TestSaveSettingsRejectsInvalid(t *testing.T) {
 	s := openTest(t)
 	bad := Defaults("/input", "/output")
 	bad.CleanupMode = "move"
-	bad.CompletedDir = "/input/done" // inside input dir — the bragibooks trap
+	bad.CompletedSubdir = "/" // absolute: would target the container filesystem
 	if err := s.SaveSettings(bad); err == nil {
-		t.Error("completed dir inside input dir was accepted")
+		t.Error("absolute completed subfolder was accepted")
 	}
 
 	bad2 := Defaults("/input", "/output")
@@ -133,6 +133,39 @@ func TestJobLifecycle(t *testing.T) {
 	_ = logs
 	if _, total, _ := s.ListJobs(0, 10); total != 0 {
 		t.Errorf("history not cleared, %d jobs left", total)
+	}
+}
+
+func TestValidateCompletedSubdir(t *testing.T) {
+	valid := []string{"", "done", "audiobooks/done", "a/b/c", "with space"}
+	for _, v := range valid {
+		if err := ValidateCompletedSubdir(v); err != nil {
+			t.Errorf("ValidateCompletedSubdir(%q) rejected: %v", v, err)
+		}
+	}
+	// Absolute paths and escapes must be refused — these are the ones that
+	// would write into the container's own filesystem.
+	invalid := []string{"/", "/completed", "/etc/passwd", "..", "../../etc", `C:\temp`, `sub\dir`, "."}
+	for _, v := range invalid {
+		if err := ValidateCompletedSubdir(v); err == nil {
+			t.Errorf("ValidateCompletedSubdir(%q) was accepted", v)
+		}
+	}
+}
+
+func TestCompletedPath(t *testing.T) {
+	root := filepath.FromSlash("/completed")
+	cases := map[string]string{
+		"":           filepath.Clean(root),
+		"done":       filepath.Join(root, "done"),
+		"a/b":        filepath.Join(root, "a", "b"),
+		"./nested/x": filepath.Join(root, "nested", "x"),
+	}
+	for sub, want := range cases {
+		got := Settings{CompletedSubdir: sub}.CompletedPath(root)
+		if got != want {
+			t.Errorf("CompletedPath(%q) = %q, want %q", sub, got, want)
+		}
 	}
 }
 

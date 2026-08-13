@@ -52,9 +52,14 @@ ENV PUID=1000 \
     PORT=8684 \
     CONFIG_DIR=/config \
     INPUT_DIR=/input \
-    OUTPUT_DIR=/output
+    OUTPUT_DIR=/output \
+    COMPLETED_DIR=/completed
 
-VOLUME ["/config", "/input", "/output"]
+# No VOLUME declarations on purpose. Docker would auto-create an anonymous
+# volume for any declared path the user did not map, which (a) hides the
+# mistake — the app cannot then tell "mapped" from "forgotten" — and (b) leaves
+# converted files in an orphaned volume. Without them, an unmapped path simply
+# does not exist, and the app says so.
 EXPOSE 8684
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \

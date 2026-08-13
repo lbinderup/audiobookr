@@ -2,9 +2,12 @@ package web
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"audiobookr/internal/config"
 	"audiobookr/internal/pathtmpl"
 	"audiobookr/internal/store"
 )
@@ -17,16 +20,67 @@ type settingsData struct {
 	Modes    []string
 	Bitrates []int
 	Preview  pathPreview
+
+	// CompletedRoot is the mapped volume the completed subfolder hangs off;
+	// CompletedResolved is where sources would actually be moved.
+	CompletedRoot     string
+	CompletedResolved string
+	CompletedMounted  bool
+
+	// Unmapped lists volume mount points that don't exist — almost always a
+	// forgotten -v in the compose file.
+	Unmapped []volumeStatus
+}
+
+type volumeStatus struct {
+	Name string // container path, e.g. /output
+	Why  string // consequence of leaving it unmapped
 }
 
 func (s *Server) settingsData() settingsData {
-	return settingsData{
+	set := s.settings()
+	d := settingsData{
 		baseData: s.base("Settings", "settings"),
-		Settings: s.settings(),
+		Settings: set,
 		Regions:  store.Regions,
 		Modes:    store.CleanupModes,
 		Bitrates: []int{64, 96, 128, 192, 256, 320},
 	}
+	d.fillCompleted(s.cfg.CompletedDir, set)
+	d.fillVolumes(s.cfg)
+	return d
+}
+
+func (d *settingsData) fillCompleted(root string, set store.Settings) {
+	d.CompletedRoot = filepath.ToSlash(filepath.Clean(root))
+	d.CompletedResolved = filepath.ToSlash(set.CompletedPath(root))
+	d.CompletedMounted = isDir(root)
+}
+
+// fillVolumes reports mount points that are missing. The image declares no
+// VOLUMEs, so a missing directory means the user did not map anything there.
+func (d *settingsData) fillVolumes(cfg config.Config) {
+	d.Unmapped = nil
+	checks := []struct {
+		path, why string
+	}{
+		{cfg.InputDir, "audiobookr has nothing to import from."},
+		{cfg.OutputDir, "converted files would be written inside the container and lost when it is recreated."},
+		{cfg.CompletedDir, "the \"move\" cleanup mode cannot be used."},
+	}
+	for _, c := range checks {
+		if !isDir(c.path) {
+			d.Unmapped = append(d.Unmapped, volumeStatus{
+				Name: filepath.ToSlash(filepath.Clean(c.path)),
+				Why:  c.why,
+			})
+		}
+	}
+}
+
+func isDir(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && info.IsDir()
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
@@ -44,9 +98,11 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	set := store.Settings{
-		InputDir:         strings.TrimSpace(r.PostFormValue("input_dir")),
-		OutputDir:        strings.TrimSpace(r.PostFormValue("output_dir")),
-		CompletedDir:     strings.TrimSpace(r.PostFormValue("completed_dir")),
+		InputDir:  strings.TrimSpace(r.PostFormValue("input_dir")),
+		OutputDir: strings.TrimSpace(r.PostFormValue("output_dir")),
+		// Stored relative to the mapped completed volume; a leading slash is
+		// trimmed rather than rejected since it is an easy thing to type.
+		CompletedSubdir:  strings.Trim(strings.TrimSpace(r.PostFormValue("completed_subdir")), "/"),
 		CleanupMode:      r.PostFormValue("cleanup_mode"),
 		PathTemplate:     strings.TrimSpace(r.PostFormValue("path_template")),
 		MetadataProvider: r.PostFormValue("metadata_provider"),
@@ -63,6 +119,7 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 		data.Settings = set // re-show what the user typed
 		data.Errors = errs
 		data.Preview = previewPath(set.PathTemplate)
+		data.fillCompleted(s.cfg.CompletedDir, set)
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		s.render.render(w, "settings", data)
 		return

@@ -27,6 +27,14 @@ func (s *Server) handleQueueCreate(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
+	// Resolve the completed subfolder once: it is stored relative to the
+	// mapped volume so it can never point inside the container itself.
+	completedPath := set.CompletedPath(s.cfg.CompletedDir)
+	completedMounted := false
+	if info, err := os.Stat(s.cfg.CompletedDir); err == nil && info.IsDir() {
+		completedMounted = true
+	}
+
 	queued, skipped := 0, []string{}
 	for _, p := range scan.DedupeSelection(r.PostForm["paths"]) {
 		choice := r.PostForm.Get("match:" + p)
@@ -56,11 +64,11 @@ func (s *Server) handleQueueCreate(w http.ResponseWriter, r *http.Request) {
 
 		cleanup := set.CleanupMode
 		if o := r.PostForm.Get("cleanup:" + p); o != "" {
-			if o == "move" && strings.TrimSpace(set.CompletedDir) == "" {
-				skipped = append(skipped, p+" (cleanup \"move\" needs a completed directory in Settings)")
-				continue
-			}
 			cleanup = o
+		}
+		if cleanup == "move" && !completedMounted {
+			skipped = append(skipped, p+" (cleanup \"move\" needs a volume mapped to "+s.cfg.CompletedDir+")")
+			continue
 		}
 		chapterMode := r.PostForm.Get("chapters:" + p) // "" = auto
 
@@ -73,7 +81,7 @@ func (s *Server) handleQueueCreate(w http.ResponseWriter, r *http.Request) {
 			Options: store.JobOptions{
 				InputDir:         set.InputDir,
 				OutputDir:        set.OutputDir,
-				CompletedDir:     set.CompletedDir,
+				CompletedDir:     completedPath,
 				CleanupMode:      cleanup,
 				PathTemplate:     set.PathTemplate,
 				BitrateKbps:      set.BitrateKbps,

@@ -46,9 +46,9 @@ the queue and chapter UX it always deserved.
   no ` - Title` stubs and no empty folders. The settings page previews both a
   series book and a standalone as you type.
 - **Source cleanup you control** — after a *verified* conversion: leave the
-  sources, move them to a completed folder (validated to be *outside* the input
-  tree), or delete them (only the audio files it consumed; other files are left
-  alone). Global default plus per-book override.
+  sources, move them into the mapped `/completed` volume (optionally a
+  subfolder of it), or delete them (only the audio files it consumed; other
+  files are left alone). Global default plus per-book override.
 
 ## Quick start
 
@@ -101,7 +101,7 @@ Environment variables (container-level):
 | `SUPPLEMENTARY_GIDS` | unset | Extra group ids for the runtime user, comma separated |
 | `TZ` | `Etc/UTC` | Timestamps in logs/UI |
 | `PORT` | `8684` | HTTP port |
-| `CONFIG_DIR` / `INPUT_DIR` / `OUTPUT_DIR` | `/config` `/input` `/output` | Volume mount points |
+| `CONFIG_DIR` / `INPUT_DIR` / `OUTPUT_DIR` / `COMPLETED_DIR` | `/config` `/input` `/output` `/completed` | Volume mount points |
 | `CONVERTER` | `real` | `fake` simulates conversions (UI development) |
 | `FFMPEG_PATH` / `FFPROBE_PATH` / `TONE_PATH` / `FDKAAC_PATH` | on `PATH` | Binary overrides |
 

@@ -97,6 +97,7 @@ code {
 }
 .flash-ok  { background: #1d2b24; border-color: var(--ok);  color: #a9dcc0; }
 .flash-err { background: #2f1d1d; border-color: var(--err); color: #eeb1b1; }
+.flash-warn { background: #2b2517; border-color: var(--warn); color: #e8cd9b; }
 .error-list { margin: 0; padding-left: 1.1rem; }
 
 /* Forms */
@@ -149,6 +150,37 @@ input[type="checkbox"] { accent-color: var(--accent); width: auto; }
 }
 
 .path-preview { color: var(--accent); }
+
+/* Input with a fixed, non-editable path prefix */
+.path-prefixed {
+  display: flex;
+  align-items: stretch;
+  max-width: 34rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+.path-prefixed:focus-within { border-color: var(--accent-dim); }
+.path-prefix {
+  display: flex;
+  align-items: center;
+  padding: 0 0.5rem;
+  background: var(--bg-raised);
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  user-select: none;
+}
+.path-prefixed input[type="text"] {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  flex: 1;
+  min-width: 0;
+}
 .path-preview-rows {
   display: inline-flex;
   flex-direction: column;
