@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} · Audiobookr</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css">
-  <script src="/static/htmx.min.js" defer></script>
-  <script src="/static/htmx-ext-sse.js" defer></script>
+  <link rel="stylesheet" href="/static/app.css?v={{.Version}}">
+  <script src="/static/htmx.min.js?v={{.Version}}" defer></script>
+  <script src="/static/htmx-ext-sse.js?v={{.Version}}" defer></script>
 </head>
 <body>
   <header class="topbar">

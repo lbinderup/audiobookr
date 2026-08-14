@@ -34,9 +34,24 @@ type JobOptions struct {
 	WriteChaptersTxt bool   `json:"write_chapters_txt"`
 	AudnexusURL      string `json:"audnexus_url"`
 	ChapterMode      string `json:"chapter_mode"` // auto|existing|provider ("" = auto)
-	// ChapterShiftMs offsets provider chapter timings to match this rip
-	// (positive = later). Ignored for file-boundary chapters.
-	ChapterShiftMs int64 `json:"chapter_shift_ms"`
+	// ChapterShift offsets provider chapter timings to match this rip —
+	// fixed or interpolated between two anchor chapters. Ignored for
+	// file-boundary chapters.
+	ChapterShift metadata.ShiftSpec `json:"chapter_shift,omitempty"`
+	// ChapterShiftMs is the legacy fixed-only field, still read so old jobs
+	// retry identically.
+	ChapterShiftMs int64 `json:"chapter_shift_ms,omitempty"`
+}
+
+// EffectiveChapterShift merges the current spec with the legacy field.
+func (o JobOptions) EffectiveChapterShift() metadata.ShiftSpec {
+	if o.ChapterShift.Mode != "" {
+		return o.ChapterShift
+	}
+	if o.ChapterShiftMs != 0 {
+		return metadata.ShiftSpec{Mode: "fixed", FixedMs: o.ChapterShiftMs}
+	}
+	return metadata.ShiftSpec{}
 }
 
 type Job struct {

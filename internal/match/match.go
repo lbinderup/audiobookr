@@ -136,6 +136,14 @@ func Score(results []metadata.SearchResult, sig Signals) []metadata.SearchResult
 	return results
 }
 
+// RuntimeBadge classifies how a published runtime compares to the local
+// audio, for display outside candidate scoring (e.g. the row summary).
+func RuntimeBadge(officialMin, localMin int) (deltaMin int, class string) {
+	r := metadata.SearchResult{RuntimeMin: officialMin}
+	classifyRuntime(&r, localMin)
+	return r.RuntimeDeltaMin, r.RuntimeMatch
+}
+
 // languageMatches is permissive: unknown on either side is not a mismatch,
 // so a provider that omits the field never causes a penalty.
 func languageMatches(want, got string) bool {

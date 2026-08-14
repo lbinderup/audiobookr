@@ -3,7 +3,10 @@
 // AudiobookDB (its announced successor) can slot in once its API launches.
 package metadata
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // SearchQuery is a title/author search against the provider's catalog.
 type SearchQuery struct {
@@ -85,26 +88,120 @@ func (b Book) Blurb() string {
 	return b.Description
 }
 
-// Shifted returns a copy of the chapter list moved by shiftMs (positive =
-// later). Rips often start a little before or after the edition the provider
-// timed, so a constant offset is usually all it takes to line them up.
-// Starts are clamped into [0, runtime] and lengths recomputed from the
-// resulting boundaries, so the list stays consistent.
+// ShiftSpec describes how provider chapter timings are offset to match a
+// specific rip. Two modes:
+//
+//   - "fixed": every chapter moves by FixedMs.
+//   - "interp": the shift is FromMs at anchor chapter FromIdx and ToMs at
+//     anchor chapter ToIdx (both 1-based), linearly interpolated by the
+//     chapters' original start times in between, and held constant outside
+//     the anchors. This models rips whose drift accumulates over the book —
+//     what sounds right at chapter 1 can be a second off by chapter 120.
+type ShiftSpec struct {
+	Mode    string `json:"mode,omitempty"` // "" (none) | "fixed" | "interp"
+	FixedMs int64  `json:"fixed_ms,omitempty"`
+	FromIdx int    `json:"from_idx,omitempty"`
+	FromMs  int64  `json:"from_ms,omitempty"`
+	ToIdx   int    `json:"to_idx,omitempty"`
+	ToMs    int64  `json:"to_ms,omitempty"`
+}
+
+// IsZero reports whether applying the spec would change nothing.
+func (s ShiftSpec) IsZero() bool {
+	switch s.Mode {
+	case "fixed":
+		return s.FixedMs == 0
+	case "interp":
+		return s.FromMs == 0 && s.ToMs == 0
+	}
+	return true
+}
+
+func (s ShiftSpec) String() string {
+	switch s.Mode {
+	case "fixed":
+		return fmt.Sprintf("fixed %+d ms", s.FixedMs)
+	case "interp":
+		return fmt.Sprintf("interpolated %+d ms @ chapter %d → %+d ms @ chapter %d",
+			s.FromMs, s.FromIdx, s.ToMs, s.ToIdx)
+	}
+	return "none"
+}
+
+// Shifted returns a copy of the chapter list moved by a constant shiftMs
+// (positive = later).
 func (c *ChapterInfo) Shifted(shiftMs int64) *ChapterInfo {
-	if c == nil || shiftMs == 0 || len(c.Chapters) == 0 {
+	if shiftMs == 0 {
+		return c
+	}
+	return c.shifted(func(int64) int64 { return shiftMs })
+}
+
+// ShiftedBy applies a ShiftSpec. Anchor indices are clamped into range and
+// swapped if reversed; a degenerate anchor pair falls back to a fixed shift
+// of FromMs.
+func (c *ChapterInfo) ShiftedBy(spec ShiftSpec) *ChapterInfo {
+	if c == nil || len(c.Chapters) == 0 || spec.IsZero() {
+		return c
+	}
+	if spec.Mode == "fixed" {
+		return c.Shifted(spec.FixedMs)
+	}
+	n := len(c.Chapters)
+	clampIdx := func(i int) int {
+		if i < 1 {
+			return 1
+		}
+		if i > n {
+			return n
+		}
+		return i
+	}
+	fi, ti := clampIdx(spec.FromIdx), clampIdx(spec.ToIdx)
+	fMs, tMs := spec.FromMs, spec.ToMs
+	if fi > ti {
+		fi, ti = ti, fi
+		fMs, tMs = tMs, fMs
+	}
+	t0, t1 := c.Chapters[fi-1].StartMs, c.Chapters[ti-1].StartMs
+	if fi == ti || t1 == t0 {
+		return c.Shifted(fMs)
+	}
+	return c.shifted(func(t int64) int64 {
+		switch {
+		case t <= t0:
+			return fMs
+		case t >= t1:
+			return tMs
+		default:
+			return fMs + (tMs-fMs)*(t-t0)/(t1-t0)
+		}
+	})
+}
+
+// shifted rebuilds the chapter list with a per-start shift function. Starts
+// are clamped into [0, runtime] and kept non-decreasing, and lengths are
+// recomputed from the resulting boundaries, so the list stays consistent.
+func (c *ChapterInfo) shifted(shiftAt func(startMs int64) int64) *ChapterInfo {
+	if c == nil || len(c.Chapters) == 0 {
 		return c
 	}
 	out := *c
 	out.Chapters = make([]Chapter, 0, len(c.Chapters))
+	var prev int64
 	for _, ch := range c.Chapters {
-		start := ch.StartMs + shiftMs
+		start := ch.StartMs + shiftAt(ch.StartMs)
 		if start < 0 {
 			start = 0
 		}
 		if c.RuntimeMs > 0 && start > c.RuntimeMs {
 			start = c.RuntimeMs
 		}
+		if start < prev {
+			start = prev
+		}
 		out.Chapters = append(out.Chapters, Chapter{Title: ch.Title, StartMs: start})
+		prev = start
 	}
 	for i := range out.Chapters {
 		if i+1 < len(out.Chapters) {

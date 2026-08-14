@@ -75,6 +75,11 @@ move → verify → cleanup).
 
 - Server-rendered `html/template` + htmx. **No build step, no npm.** htmx and
   its SSE extension are vendored in `internal/web/static/`.
+- **`hx-vals="js:..."` expressions MUST be object literals** (may use `...spread`
+  for merging). htmx 2's evaluator silently rejects anything that doesn't start
+  with `{` — `js:Object.assign(...)` or `js:someFn()` kills the request with an
+  uncaught SyntaxError and the button appears dead. This was a real shipped bug;
+  don't reintroduce it.
 - SSE events carry pre-rendered HTML fragments; the broker itself knows nothing
   about templates. Slow subscribers drop events (progress is idempotent).
 - Keep the dependency list tiny — currently only `modernc.org/sqlite` and

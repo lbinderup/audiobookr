@@ -1,0 +1,18 @@
+{{define "row_summary"}}
+{{if .Book}}
+<div class="row-summary-inner" data-cover="{{.Book.CoverURL}}">
+  <div class="row-title"><strong>{{.Book.Title}}</strong></div>
+  <div class="muted row-line">{{.AuthorLine}} · <span class="candidate-asin">{{.Book.ASIN}}</span></div>
+  <div class="muted row-line">{{if .SeriesLine}}{{.SeriesLine}} · {{end}}{{.Files}} audio file{{if ne .Files 1}}s{{end}}</div>
+  {{if .OfficialClock}}
+  <div class="row-line rt-line">Official runtime {{.OfficialClock}} vs your audio {{.LocalClock}}</div>
+  {{if .BadgeClass}}
+  <div class="row-line"><span class="rt-badge rt-{{.BadgeClass}}">⏱ {{.BadgeText}}</span></div>
+  {{end}}
+  {{end}}
+</div>
+{{else}}
+<div class="row-title"><strong>No match assigned</strong></div>
+<div class="muted row-line">{{.Path}} · {{.Files}} audio file{{if ne .Files 1}}s{{end}}</div>
+{{end}}
+{{end}}

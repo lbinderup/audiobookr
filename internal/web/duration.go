@@ -19,19 +19,18 @@ type durationCache struct {
 }
 
 type durationEntry struct {
-	sig    string // changes when the underlying files do
-	totalM int    // minutes
+	sig     string // changes when the underlying files do
+	totalMs int64
 }
 
 func newDurationCache() *durationCache {
 	return &durationCache{m: map[string]durationEntry{}}
 }
 
-// LocalRuntimeMin returns the combined duration of everything that would be
-// merged for this selection, in minutes. It returns 0 when the duration
-// can't be determined — callers treat that as "unknown" and fall back to
-// name-only matching rather than failing.
-func (s *Server) LocalRuntimeMin(ctx context.Context, rel string) int {
+// LocalRuntimeMs returns the combined duration of everything that would be
+// merged for this selection. It returns 0 when the duration can't be
+// determined — callers treat that as "unknown" rather than failing.
+func (s *Server) LocalRuntimeMs(ctx context.Context, rel string) int64 {
 	set := s.settings()
 	files, err := scan.CollectAudioFiles(set.InputDir, rel)
 	if err != nil || len(files) == 0 {
@@ -43,7 +42,7 @@ func (s *Server) LocalRuntimeMin(ctx context.Context, rel string) int {
 	entry, ok := s.durations.m[rel]
 	s.durations.mu.Unlock()
 	if ok && entry.sig == sig {
-		return entry.totalM
+		return entry.totalMs
 	}
 
 	var totalMs int64
@@ -54,12 +53,17 @@ func (s *Server) LocalRuntimeMin(ctx context.Context, rel string) int {
 		}
 		totalMs += info.DurationMs
 	}
-	minutes := int((totalMs + 30_000) / 60_000) // round to nearest minute
 
 	s.durations.mu.Lock()
-	s.durations.m[rel] = durationEntry{sig: sig, totalM: minutes}
+	s.durations.m[rel] = durationEntry{sig: sig, totalMs: totalMs}
 	s.durations.mu.Unlock()
-	return minutes
+	return totalMs
+}
+
+// LocalRuntimeMin is LocalRuntimeMs rounded to the nearest minute, for
+// candidate scoring.
+func (s *Server) LocalRuntimeMin(ctx context.Context, rel string) int {
+	return int((s.LocalRuntimeMs(ctx, rel) + 30_000) / 60_000)
 }
 
 // filesSignature cheaply identifies a set of files by count, size and mtime,

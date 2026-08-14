@@ -3,6 +3,7 @@ package web
 import (
 	"io/fs"
 	"net/http"
+	"path/filepath"
 )
 
 func (s *Server) routes() http.Handler {
@@ -20,6 +21,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /match/preview", s.handleMatchPreview)
 	mux.HandleFunc("GET /match/provider-chapters", s.handleMatchProviderChapters)
 	mux.HandleFunc("GET /match/chapter-plan", s.handleMatchChapterPlan)
+	mux.HandleFunc("GET /match/row-summary", s.handleMatchRowSummary)
 	mux.HandleFunc("GET /preview/audio", s.handlePreviewAudio)
 
 	mux.HandleFunc("POST /queue", s.handleQueueCreate)
@@ -42,15 +44,30 @@ func (s *Server) routes() http.Handler {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	staticRoot, _ := fs.Sub(staticFS, "static")
-	mux.Handle("GET /static/", http.StripPrefix("/static/", cacheStatic(http.FileServerFS(staticRoot))))
+	// Dev serves static assets from disk so CSS/JS edits apply on refresh,
+	// matching the template reloading; production uses the embedded copies.
+	var staticHandler http.Handler
+	if s.cfg.Dev {
+		staticHandler = http.FileServer(http.Dir(filepath.Join("internal", "web", "static")))
+	} else {
+		staticRoot, _ := fs.Sub(staticFS, "static")
+		staticHandler = http.FileServerFS(staticRoot)
+	}
+	mux.Handle("GET /static/", http.StripPrefix("/static/", s.cacheStatic(staticHandler)))
 
 	return mux
 }
 
-func cacheStatic(next http.Handler) http.Handler {
+// cacheStatic sets caching for static assets. The layout appends ?v=<version>
+// to asset URLs, so releases bust the cache; dev mode disables caching
+// entirely because assets change constantly and the version string does not.
+func (s *Server) cacheStatic(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		if s.cfg.Dev {
+			w.Header().Set("Cache-Control", "no-store")
+		} else {
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

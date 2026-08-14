@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"audiobookr/internal/match"
 	"audiobookr/internal/metadata"
 	"audiobookr/internal/pipeline"
 	"audiobookr/internal/scan"
@@ -178,7 +179,7 @@ type providerChaptersData struct {
 	RuntimeMs int64
 	Runtime   string
 	Accurate  bool
-	ShiftMs   int64 // current per-book offset, preserved across reloads
+	Shift     metadata.ShiftSpec // current per-book offset, preserved across reloads
 	Err       string
 }
 
@@ -187,8 +188,8 @@ type providerChaptersData struct {
 func (s *Server) handleMatchProviderChapters(w http.ResponseWriter, r *http.Request) {
 	choice := r.URL.Query().Get("choice") // "ASIN|region" from the selected radio
 	data := providerChaptersData{
-		Path:    r.URL.Query().Get("path"),
-		ShiftMs: parseShiftMs(r.URL.Query().Get("shift")),
+		Path:  r.URL.Query().Get("path"),
+		Shift: shiftSpecFrom(r.URL.Query().Get),
 	}
 	asin, region, ok := strings.Cut(choice, "|")
 	if !ok || asin == "" {
@@ -217,7 +218,94 @@ func (s *Server) handleMatchProviderChapters(w http.ResponseWriter, r *http.Requ
 			Title: c.Title, StartMs: c.StartMs, Stamp: msClock(c.StartMs),
 		})
 	}
+	// Anchor defaults: first and last chapter, so switching to interpolated
+	// mode starts from a whole-book span.
+	if data.Shift.FromIdx == 0 {
+		data.Shift.FromIdx = 1
+	}
+	if data.Shift.ToIdx == 0 {
+		data.Shift.ToIdx = len(data.Chapters)
+	}
 	s.render.partial(w, "match", "provider_chapters", data)
+}
+
+type rowSummaryData struct {
+	Path          string
+	Files         int
+	Book          *metadata.Book
+	AuthorLine    string
+	SeriesLine    string
+	OfficialClock string
+	LocalClock    string
+	BadgeClass    string
+	BadgeText     string
+	Err           string
+}
+
+// handleMatchRowSummary renders the compact row description of the assigned
+// match: title, author · ASIN, series · file count, and the official-vs-local
+// runtime comparison.
+func (s *Server) handleMatchRowSummary(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	set := s.settings()
+	data := rowSummaryData{Path: q.Get("path")}
+
+	if files, err := scan.CollectAudioFiles(set.InputDir, data.Path); err == nil {
+		data.Files = len(files)
+	}
+
+	asin, region, ok := strings.Cut(q.Get("choice"), "|")
+	if !ok || asin == "" {
+		data.Err = "No match assigned"
+		s.render.partial(w, "match", "row_summary", data)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	book, _ := s.store.CachedBook(asin, region)
+	if book == nil {
+		var err error
+		if book, err = s.provider().GetBook(ctx, asin, region); err != nil {
+			data.Err = "Lookup failed: " + err.Error()
+			s.render.partial(w, "match", "row_summary", data)
+			return
+		}
+		s.store.CacheBook(asin, region, book)
+	}
+	data.Book = book
+	data.AuthorLine = strings.Join(book.Authors, ", ")
+	if book.SeriesName != "" {
+		data.SeriesLine = book.SeriesName
+		if book.SeriesPosition != "" {
+			data.SeriesLine += ", Book " + book.SeriesPosition
+		}
+	}
+
+	// Official runtime: the chapter data carries millisecond precision; the
+	// book record only minutes. Chapters may be cached already (the verdict
+	// endpoint fetches them); don't force a fetch just for this line.
+	officialMs := int64(book.RuntimeMin) * 60_000
+	if ch, _ := s.store.CachedChapters(asin, region); ch != nil && ch.RuntimeMs > 0 {
+		officialMs = ch.RuntimeMs
+	}
+	localMs := s.LocalRuntimeMs(ctx, data.Path)
+	if officialMs > 0 && localMs > 0 {
+		data.OfficialClock = msClock(officialMs)
+		data.LocalClock = msClock(localMs)
+		delta, class := match.RuntimeBadge(int((officialMs+30_000)/60_000), int((localMs+30_000)/60_000))
+		data.BadgeClass = class
+		switch class {
+		case "exact":
+			data.BadgeText = "runtime matches your audio"
+		case "off":
+			data.BadgeText = deltaMinutes(delta) + " — likely a different edition"
+		default:
+			data.BadgeText = deltaMinutes(delta) + " vs your audio"
+		}
+	}
+	s.render.partial(w, "match", "row_summary", data)
 }
 
 type chapterPlanData struct {
@@ -279,8 +367,8 @@ func (s *Server) handleMatchChapterPlan(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	// The verdict must reflect the same shift the conversion will apply.
-	if shift := parseShiftMs(q.Get("shift")); shift != 0 && provider != nil {
-		provider = provider.Shifted(shift)
+	if shift := shiftSpecFrom(q.Get); !shift.IsZero() && provider != nil {
+		provider = provider.ShiftedBy(shift)
 	}
 
 	plan := pipeline.PlanChapters(mode, provider, infos, totalMs, "")
@@ -290,10 +378,9 @@ func (s *Server) handleMatchChapterPlan(w http.ResponseWriter, r *http.Request) 
 	n := len(plan.Chapters)
 	switch plan.Source {
 	case "audnexus":
+		// No reason line: the row summary right above already carries the
+		// official-vs-local runtime comparison.
 		data.Icon, data.Verdict = "🌐", fmt.Sprintf("Will embed Audible's %d chapters.", n)
-		if provider != nil {
-			data.Reason = fmt.Sprintf("Official runtime %s vs your audio %s.", msClock(provider.RuntimeMs), msClock(totalMs))
-		}
 	case "existing":
 		data.Icon, data.Verdict = "📼", fmt.Sprintf("Will keep the file's own %d chapters.", n)
 		if mode == pipeline.ChapterModeExisting {
@@ -318,6 +405,35 @@ func choiceHint(choice string) string {
 		return " (no match selected yet)"
 	}
 	return ""
+}
+
+// shiftSpecFrom builds a ShiftSpec from request values (query or form). The
+// get function abstracts the key prefix, so both "shift_mode" and
+// "shift_mode:Some Book" callers share this.
+func shiftSpecFrom(get func(string) string) metadata.ShiftSpec {
+	switch get("shift_mode") {
+	case "interp":
+		return metadata.ShiftSpec{
+			Mode:    "interp",
+			FromIdx: atoiOr(get("shift_from_idx"), 0),
+			FromMs:  parseShiftMs(get("shift_from_ms")),
+			ToIdx:   atoiOr(get("shift_to_idx"), 0),
+			ToMs:    parseShiftMs(get("shift_to_ms")),
+		}
+	default: // "", "fixed"
+		if ms := parseShiftMs(get("shift")); ms != 0 {
+			return metadata.ShiftSpec{Mode: "fixed", FixedMs: ms}
+		}
+		return metadata.ShiftSpec{}
+	}
+}
+
+func atoiOr(s string, def int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 // parseShiftMs reads a user-supplied chapter offset, ignoring junk and

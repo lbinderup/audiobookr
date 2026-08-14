@@ -15,7 +15,7 @@
     <div class="chapter-columns">
       <div>
         {{if .Multi}}
-        <h3>File boundaries <span class="muted">({{len .Files}} files · {{.Duration}})</span></h3>
+        <h3 class="src-existing">File boundaries <span class="muted">({{len .Files}} files · {{.Duration}})</span></h3>
         <div class="chapter-list">
           {{range .Files}}
           <div class="file-row">
@@ -35,7 +35,7 @@
           Use file boundaries
         </button>
         {{else}}
-        <h3>Embedded chapters {{if .Chapters}}<span class="muted">({{len .Chapters}} · {{.Duration}})</span>{{end}}</h3>
+        <h3 class="src-existing">Embedded chapters {{if .Chapters}}<span class="muted">({{len .Chapters}} · {{.Duration}})</span>{{end}}</h3>
         {{if .Chapters}}
         <div class="chapter-list">
           {{range .Chapters}}
@@ -54,12 +54,12 @@
       </div>
 
       <div class="provider-col">
-        <h3>Audible chapters</h3>
+        <h3 class="src-provider">Audible chapters</h3>
         <button type="button" class="btn-ghost btn-small"
                 hx-get="/match/provider-chapters"
                 hx-target="closest .provider-col"
                 hx-swap="innerHTML"
-                hx-vals='js:{choice: document.querySelector(`input[name="match:{{.RelPath}}"]:checked`)?.value || "", path: {{.RelPath | printf "%q"}}}'>
+                hx-vals='js:{choice: document.querySelector(`input[name="match:{{.RelPath}}"]:checked`)?.value || "", path: {{.RelPath | printf "%q"}}, ...shiftVals({{.RelPath | printf "%q"}})}'>
           Load for comparison
         </button>
       </div>

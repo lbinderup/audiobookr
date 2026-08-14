@@ -71,7 +71,9 @@ func (s *Server) handleQueueCreate(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		chapterMode := r.PostForm.Get("chapters:" + p) // "" = auto
-		chapterShift := parseShiftMs(r.PostForm.Get("shift:" + p))
+		chapterShift := shiftSpecFrom(func(key string) string {
+			return r.PostForm.Get(key + ":" + p)
+		})
 
 		job := &store.Job{
 			InputPath:   p,
@@ -90,7 +92,7 @@ func (s *Server) handleQueueCreate(w http.ResponseWriter, r *http.Request) {
 				WriteChaptersTxt: set.WriteChaptersTxt,
 				AudnexusURL:      set.AudnexusURL,
 				ChapterMode:      chapterMode,
-				ChapterShiftMs:   chapterShift,
+				ChapterShift:     chapterShift,
 			},
 		}
 		if err := s.store.CreateJob(job); err != nil {
