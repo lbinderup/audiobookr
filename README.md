@@ -7,8 +7,8 @@ chapterized **`.m4b`** in your library — tagged with author, narrator, series,
 cover art and its Audible ASIN, ready for Plex or Prologue.
 
 A spiritual successor to [bragibooks](https://github.com/djdembeck/bragibooks),
-rebuilt in Go around ffmpeg + [tone](https://github.com/sandreas/tone), with
-the queue and chapter UX it always deserved.
+rebuilt in Go around ffmpeg + [tone](https://github.com/sandreas/tone), with enhanced
+chapterization abilities.
 
 ## What it does
 
