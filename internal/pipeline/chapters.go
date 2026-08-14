@@ -13,10 +13,23 @@ import (
 // ResolvedChapters is what actually gets embedded, plus provenance for the
 // job record and UI.
 type ResolvedChapters struct {
-	Source   string             `json:"source"` // "audnexus" | "files" | "existing" | "single"
+	Source   string             `json:"source"` // one of the Source* constants
 	Chapters []metadata.Chapter `json:"chapters"`
 	Warnings []string           `json:"-"`
 }
+
+// ResolvedChapters.Source values. ("provider" was called "audnexus" before
+// the aggregation layer; the string is only interpreted live — verdict text
+// and CSS classes — never re-parsed from stored jobs, so the rename is
+// compatibility-free.)
+const (
+	SourceProvider       = "provider"        // the remote catalog's chapter list
+	SourceExisting       = "existing"        // chapters already embedded in the input file
+	SourceFiles          = "files"           // one chapter per input file
+	SourceSingle         = "single"          // one whole-book chapter
+	SourceTitlesFiles    = "titles-files"    // provider titles on file boundaries
+	SourceTitlesExisting = "titles-existing" // provider titles on embedded timings
+)
 
 // runtimeTolerance returns the allowed |provider - actual| runtime delta.
 func runtimeTolerance(actualMs int64) int64 {
@@ -32,6 +45,12 @@ const (
 	ChapterModeAuto     = "auto"     // provider if runtime matches → existing → boundaries
 	ChapterModeExisting = "existing" // keep the input file's own chapters
 	ChapterModeProvider = "provider" // force provider chapters even on runtime mismatch
+	// Mix modes: the provider's chapter TITLES on LOCAL timings — for rips
+	// whose boundaries are right but whose names are junk ("Track 01").
+	// Timings are local by construction, so the runtime gate and ShiftSpec
+	// don't apply.
+	ChapterModeTitlesFiles    = "titles-files"    // titles onto file boundaries (multi-file)
+	ChapterModeTitlesExisting = "titles-existing" // titles onto the file's own chapters (single-file)
 )
 
 // PlanChapters previews exactly what a conversion would embed, without
@@ -56,6 +75,19 @@ func PlanChapters(mode string, provider *metadata.ChapterInfo, files []*FileInfo
 func resolveChapters(mode string, provider *metadata.ChapterInfo, files []*FileInfo, actualMs int64, bookTitle string) ResolvedChapters {
 	var out ResolvedChapters
 
+	// Mix modes run first: they combine two sources, so they can't sit in
+	// the single-source priority chain below. On any alignment failure they
+	// degrade to the automatic decision — never to zero chapters.
+	switch mode {
+	case ChapterModeTitlesFiles, ChapterModeTitlesExisting:
+		if chs, src, warns := mixTitles(mode, provider, files); chs != nil {
+			out.Source, out.Chapters, out.Warnings = src, chs, warns
+			return out
+		}
+		out.Warnings = append(out.Warnings, mixFallbackWarning(mode, provider, files))
+		mode = ChapterModeAuto
+	}
+
 	useProvider := mode != ChapterModeExisting && provider != nil && len(provider.Chapters) > 0
 	if useProvider {
 		delta := provider.RuntimeMs - actualMs
@@ -64,7 +96,7 @@ func resolveChapters(mode string, provider *metadata.ChapterInfo, files []*FileI
 		}
 		mismatch := delta > runtimeTolerance(actualMs)
 		if !mismatch || mode == ChapterModeProvider {
-			out.Source = "audnexus"
+			out.Source = SourceProvider
 			out.Chapters = provider.Chapters
 			if mismatch {
 				out.Warnings = append(out.Warnings, fmt.Sprintf(
@@ -88,7 +120,7 @@ func resolveChapters(mode string, provider *metadata.ChapterInfo, files []*FileI
 
 	// Single input file that already carries chapters: keep them.
 	if len(files) == 1 && len(files[0].Chapters) > 0 {
-		out.Source = "existing"
+		out.Source = SourceExisting
 		for _, c := range files[0].Chapters {
 			out.Chapters = append(out.Chapters, metadata.Chapter{
 				Title: c.Title, StartMs: c.StartMs, LengthMs: c.EndMs - c.StartMs,
@@ -98,7 +130,7 @@ func resolveChapters(mode string, provider *metadata.ChapterInfo, files []*FileI
 	}
 
 	if len(files) > 1 {
-		out.Source = "files"
+		out.Source = SourceFiles
 		out.Chapters = chaptersFromBoundaries(files)
 		return out
 	}
@@ -108,9 +140,116 @@ func resolveChapters(mode string, provider *metadata.ChapterInfo, files []*FileI
 	if title == "" {
 		title = "Chapter 01"
 	}
-	out.Source = "single"
+	out.Source = SourceSingle
 	out.Chapters = []metadata.Chapter{{Title: title, StartMs: 0, LengthMs: actualMs}}
 	return out
+}
+
+// mixTitles builds local-timed chapters carrying the provider's titles.
+// Returns nil when the mode's local timing source is missing or the title
+// counts can't be reconciled.
+func mixTitles(mode string, provider *metadata.ChapterInfo, files []*FileInfo) ([]metadata.Chapter, string, []string) {
+	if provider == nil || len(provider.Chapters) == 0 {
+		return nil, "", nil
+	}
+	var local []metadata.Chapter
+	var src string
+	switch mode {
+	case ChapterModeTitlesFiles:
+		if len(files) < 2 {
+			return nil, "", nil
+		}
+		local = chaptersFromBoundaries(files)
+		src = SourceTitlesFiles
+	case ChapterModeTitlesExisting:
+		if len(files) != 1 || len(files[0].Chapters) == 0 {
+			return nil, "", nil
+		}
+		for _, c := range files[0].Chapters {
+			local = append(local, metadata.Chapter{
+				Title: c.Title, StartMs: c.StartMs, LengthMs: c.EndMs - c.StartMs,
+			})
+		}
+		src = SourceTitlesExisting
+	default:
+		return nil, "", nil
+	}
+	titles, note, ok := alignTitles(provider, len(local))
+	if !ok {
+		return nil, "", nil
+	}
+	for i := range local {
+		local[i].Title = titles[i]
+	}
+	var warns []string
+	if note != "" {
+		warns = append(warns, note)
+	}
+	return local, src, warns
+}
+
+// alignTitles reconciles the provider's chapter titles with n local timing
+// slots. An exact count maps 1:1. When the provider has one or two extras,
+// a SHORT leading and/or trailing chapter is dropped — Audible editions
+// carry "Opening/End Credits" (≈ the brand intro/outro stingers) that rips
+// usually lack. Anything else fails: count matching is deliberately strict,
+// because distributing titles fuzzily would silently misname every chapter
+// after the first drift point.
+func alignTitles(p *metadata.ChapterInfo, n int) (titles []string, note string, ok bool) {
+	chs := p.Chapters
+	extra := len(chs) - n
+	if n == 0 || extra < 0 || extra > 2 {
+		return nil, "", false
+	}
+	short := func(i int, brandMs int64) bool {
+		limit := brandMs + 5_000
+		if limit < 40_000 {
+			limit = 40_000
+		}
+		return chs[i].LengthMs > 0 && chs[i].LengthMs <= limit
+	}
+	var dropped []string
+	lo, hi := 0, len(chs)
+	for range extra {
+		switch {
+		case short(lo, p.BrandIntroMs):
+			dropped = append(dropped, chs[lo].Title)
+			lo++
+		case short(hi-1, p.BrandOutroMs):
+			dropped = append(dropped, chs[hi-1].Title)
+			hi--
+		default:
+			return nil, "", false
+		}
+	}
+	for _, c := range chs[lo:hi] {
+		titles = append(titles, c.Title)
+	}
+	if len(dropped) > 0 {
+		note = fmt.Sprintf("Skipped the provider's short %q chapter(s) to line the titles up — rips usually omit those.",
+			strings.Join(dropped, "”, “"))
+	}
+	return titles, note, true
+}
+
+// mixFallbackWarning explains why a requested mix mode couldn't be honored.
+func mixFallbackWarning(mode string, provider *metadata.ChapterInfo, files []*FileInfo) string {
+	if provider == nil || len(provider.Chapters) == 0 {
+		return "Audible's chapter titles were requested but no chapter data is available — fell back to the automatic decision."
+	}
+	local := "your input"
+	switch mode {
+	case ChapterModeTitlesFiles:
+		local = fmt.Sprintf("your %d file(s)", len(files))
+	case ChapterModeTitlesExisting:
+		n := 0
+		if len(files) == 1 {
+			n = len(files[0].Chapters)
+		}
+		local = fmt.Sprintf("the file's %d embedded chapter(s)", n)
+	}
+	return fmt.Sprintf("Audible has %d chapter titles but they can't be lined up with %s — fell back to the automatic decision.",
+		len(provider.Chapters), local)
 }
 
 // chaptersFromBoundaries builds one chapter per input file from cumulative

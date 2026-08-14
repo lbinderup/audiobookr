@@ -1,12 +1,12 @@
 {{define "chapter_preview"}}
-<div class="chapter-preview" {{if .Multi}}data-files="{{.FilesJSON}}"{{end}}>
+<div class="chapter-preview" data-root="{{.Root}}" {{if .Multi}}data-files="{{.FilesJSON}}"{{end}}>
   {{if .Err}}
     <p class="muted">⚠ {{.Err}}</p>
   {{else}}
     {{$first := index .Files 0}}
     {{if .Playable}}
     <audio controls preload="metadata" data-rel="{{$first.Rel}}"
-           src="/preview/audio?path={{$first.Rel | urlquery}}"></audio>
+           src="/preview/audio?path={{$first.Rel | urlquery}}&root={{$.Root | urlquery}}"></audio>
     {{else}}
     <p class="muted">This format can't be played in a browser, but the lists below are still shown.</p>
     {{end}}

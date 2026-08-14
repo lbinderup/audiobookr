@@ -21,6 +21,12 @@ type matchItem struct {
 	Keywords string // pre-computed search guess from the folder name
 	Title    string
 	Author   string
+
+	// Library retags only: what the file already claims, and the ASIN found in
+	// its own atoms (empty when it carries none). Current is nil when the file
+	// could not be probed.
+	Current *metadata.Book
+	ASIN    string
 }
 
 type matchData struct {
@@ -29,7 +35,16 @@ type matchData struct {
 	Regions        []string
 	Region         string
 	CleanupDefault string
+	// Root is "" for the import volume or "library" when retagging files
+	// already in the library. It travels with every request the page makes so
+	// each one resolves paths against the same directory.
+	Root string
+	// PathTemplate is shown next to the rename toggle (library only).
+	PathTemplate string
 }
+
+// IsLibrary reports whether this is a retag batch, for template branching.
+func (d matchData) IsLibrary() bool { return d.Root == RootLibrary }
 
 // handleMatch receives the import selection and renders the match screen;
 // each item then auto-loads its candidates via htmx.
@@ -49,6 +64,7 @@ func (s *Server) handleMatch(w http.ResponseWriter, r *http.Request) {
 		Regions:        store.Regions,
 		Region:         set.RegionDefault,
 		CleanupDefault: set.CleanupMode,
+		PathTemplate:   set.PathTemplate,
 	}
 	for i, p := range paths {
 		item := matchItem{Index: i, RelPath: p}
@@ -108,7 +124,7 @@ func (s *Server) handleMatchCandidates(w http.ResponseWriter, r *http.Request) {
 
 	// Measure the actual audio so runtime can inform the ranking. Unknown
 	// (0) simply falls back to name-only matching.
-	data.LocalRuntimeMin = s.LocalRuntimeMin(ctx, data.RelPath)
+	data.LocalRuntimeMin = s.LocalRuntimeMin(ctx, s.rootDir(q.Get), data.RelPath)
 
 	results, err := s.provider().Search(ctx, query)
 	if err != nil {
@@ -159,7 +175,9 @@ func (s *Server) handleMatchLookup(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	book, err := s.provider().GetBook(ctx, asin, region)
+	// The aggregator also resolves ASINs that Audnexus doesn't know but the
+	// Audible catalog does — common for fresh releases.
+	res, err := s.aggregator().GetBook(ctx, asin, region, nil)
 	if err != nil {
 		if metadata.IsNotFound(err) {
 			data.Err = "No book with ASIN " + asin + " in region " + region + "."
@@ -167,7 +185,7 @@ func (s *Server) handleMatchLookup(w http.ResponseWriter, r *http.Request) {
 			data.Err = "Lookup failed: " + err.Error()
 		}
 	} else {
-		data.Book = book
+		data.Book = res.Book
 	}
 	s.render.partial(w, "match", "book_card", data)
 }

@@ -1,0 +1,21 @@
+{{define "library_rows"}}
+{{if .Err}}
+<li class="muted">Search failed: {{.Err}}</li>
+{{else if not .Entries}}
+<li class="muted">Nothing in the library matches “{{.Query}}”.</li>
+{{else}}
+{{range .Entries}}
+<li>
+  <span class="tree-row tree-file">
+    <input type="checkbox" name="paths" value="{{.RelPath}}">
+    <span class="tree-icon">🎧</span>
+    <span class="tree-name lib-path">{{.RelPath}}</span>
+    <span class="tree-meta muted">{{humanSize .Size}}</span>
+  </span>
+</li>
+{{end}}
+{{if .Truncated}}
+<li class="muted">Showing the first {{len .Entries}} of {{.Total}} matches — add another word to narrow it down.</li>
+{{end}}
+{{end}}
+{{end}}

@@ -8,11 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"math/rand/v2"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -45,17 +43,7 @@ func (p *Provider) Search(ctx context.Context, q metadata.SearchQuery) ([]metada
 }
 
 // ValidASIN reports whether s looks like an ASIN (10 alphanumeric chars).
-func ValidASIN(s string) bool {
-	if len(s) != 10 {
-		return false
-	}
-	for _, r := range s {
-		if !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9') {
-			return false
-		}
-	}
-	return true
-}
+func ValidASIN(s string) bool { return metadata.ValidASIN(s) }
 
 // apiBook mirrors the live /books/{asin} response shape.
 type apiBook struct {
@@ -105,7 +93,7 @@ func (p *Provider) GetBook(ctx context.Context, asin, region string) (*metadata.
 		Description: ab.Description,
 		// `summary` is the full blurb but arrives as HTML; `description` is a
 		// ~250-char teaser ending in "...". Keep both, flattened to text.
-		Summary:    htmlToText(ab.Summary),
+		Summary:    metadata.HTMLToText(ab.Summary),
 		RuntimeMin: ab.RuntimeMin,
 		CoverURL:   ab.Image,
 	}
@@ -241,35 +229,6 @@ func (p *Provider) getJSON(ctx context.Context, url string, out any) error {
 		}
 	}
 	return lastErr
-}
-
-var (
-	htmlBreak = regexp.MustCompile(`(?i)<br\s*/?>|</p\s*>|</div\s*>|</li\s*>`)
-	htmlTag   = regexp.MustCompile(`<[^>]*>`)
-	htmlSpace = regexp.MustCompile(`[ \t]{2,}`)
-	htmlBlank = regexp.MustCompile(`\n{3,}`)
-)
-
-// htmlToText flattens the provider's HTML blurb into plain text suitable for
-// an mp4 metadata atom: block-level tags become paragraph breaks, the
-// remaining tags are dropped, and entities are decoded.
-func htmlToText(s string) string {
-	if s == "" {
-		return ""
-	}
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	s = htmlBreak.ReplaceAllString(s, "\n\n")
-	s = htmlTag.ReplaceAllString(s, "")
-	s = html.UnescapeString(s)
-	s = strings.ReplaceAll(s, " ", " ") // non-breaking space
-	s = htmlSpace.ReplaceAllString(s, " ")
-	s = htmlBlank.ReplaceAllString(s, "\n\n")
-	// Tag removal leaves stray spaces at line edges (e.g. from "</p> <p>").
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		lines[i] = strings.TrimSpace(l)
-	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 var errDone = errors.New("done")

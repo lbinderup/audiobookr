@@ -13,6 +13,7 @@ import (
 
 	"audioborker/internal/match"
 	"audioborker/internal/metadata"
+	"audioborker/internal/metadata/aggregate"
 	"audioborker/internal/pipeline"
 	"audioborker/internal/scan"
 )
@@ -29,8 +30,8 @@ var audioContentTypes = map[string]string{
 // Range requests, so browser <audio> seeking works — including remotely
 // through a reverse proxy.
 func (s *Server) handlePreviewAudio(w http.ResponseWriter, r *http.Request) {
-	set := s.settings()
-	abs, err := scan.Resolve(set.InputDir, r.URL.Query().Get("path"))
+	q := r.URL.Query()
+	abs, err := scan.Resolve(s.rootDir(q.Get), q.Get("path"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -76,6 +77,7 @@ type previewFile struct {
 
 type previewData struct {
 	RelPath    string
+	Root       string // "" = import volume, "library" = output volume
 	Multi      bool
 	Files      []previewFile
 	FilesJSON  string // [{"rel","start","end"}] for the seek-across-files JS
@@ -92,16 +94,17 @@ type previewData struct {
 // start (the would-be boundary chapters), so the user can hear whether files
 // begin at natural breaks or were split arbitrarily mid-sentence.
 func (s *Server) handleMatchPreview(w http.ResponseWriter, r *http.Request) {
-	set := s.settings()
-	rel := r.URL.Query().Get("path")
-	data := previewData{RelPath: rel}
+	q := r.URL.Query()
+	root := s.rootDir(q.Get)
+	rel := q.Get("path")
+	data := previewData{RelPath: rel, Root: q.Get("root")}
 
 	fail := func(msg string) {
 		data.Err = msg
 		s.render.partial(w, "match", "chapter_preview", data)
 	}
 
-	files, err := scan.CollectAudioFiles(set.InputDir, rel)
+	files, err := scan.CollectAudioFiles(root, rel)
 	if err != nil {
 		fail(err.Error())
 		return
@@ -119,7 +122,7 @@ func (s *Server) handleMatchPreview(w http.ResponseWriter, r *http.Request) {
 		Start int64  `json:"start"`
 		End   int64  `json:"end"`
 	}
-	inputRoot := filepath.Clean(set.InputDir)
+	inputRoot := filepath.Clean(root)
 	var bounds []boundary
 	var offset int64
 	for i, f := range files {
@@ -209,7 +212,7 @@ func (s *Server) handleMatchProviderChapters(w http.ResponseWriter, r *http.Requ
 		s.render.partial(w, "match", "provider_chapters", data)
 		return
 	}
-	s.store.CacheChapters(asin, region, info)
+	s.store.CacheChapters(aggregate.SourceAudnexus, asin, region, info)
 	data.RuntimeMs = info.RuntimeMs
 	data.Runtime = msClock(info.RuntimeMs)
 	data.Accurate = info.IsAccurate
@@ -239,6 +242,7 @@ type rowSummaryData struct {
 	LocalClock    string
 	BadgeClass    string
 	BadgeText     string
+	Notes         []string // aggregation degradation notes (secondary source down)
 	Err           string
 }
 
@@ -247,10 +251,10 @@ type rowSummaryData struct {
 // runtime comparison.
 func (s *Server) handleMatchRowSummary(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	set := s.settings()
+	root := s.rootDir(q.Get)
 	data := rowSummaryData{Path: q.Get("path")}
 
-	if files, err := scan.CollectAudioFiles(set.InputDir, data.Path); err == nil {
+	if files, err := scan.CollectAudioFiles(root, data.Path); err == nil {
 		data.Files = len(files)
 	}
 
@@ -264,17 +268,15 @@ func (s *Server) handleMatchRowSummary(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
-	book, _ := s.store.CachedBook(asin, region)
-	if book == nil {
-		var err error
-		if book, err = s.provider().GetBook(ctx, asin, region); err != nil {
-			data.Err = "Lookup failed: " + err.Error()
-			s.render.partial(w, "match", "row_summary", data)
-			return
-		}
-		s.store.CacheBook(asin, region, book)
+	res, err := s.aggregator().GetBook(ctx, asin, region, nil)
+	if err != nil {
+		data.Err = "Lookup failed: " + err.Error()
+		s.render.partial(w, "match", "row_summary", data)
+		return
 	}
+	book := res.Book
 	data.Book = book
+	data.Notes = res.Notes
 	data.AuthorLine = strings.Join(book.Authors, ", ")
 	if book.SeriesName != "" {
 		data.SeriesLine = book.SeriesName
@@ -287,10 +289,10 @@ func (s *Server) handleMatchRowSummary(w http.ResponseWriter, r *http.Request) {
 	// book record only minutes. Chapters may be cached already (the verdict
 	// endpoint fetches them); don't force a fetch just for this line.
 	officialMs := int64(book.RuntimeMin) * 60_000
-	if ch, _ := s.store.CachedChapters(asin, region); ch != nil && ch.RuntimeMs > 0 {
+	if ch, _ := s.store.CachedChapters(aggregate.SourceAudnexus, asin, region); ch != nil && ch.RuntimeMs > 0 {
 		officialMs = ch.RuntimeMs
 	}
-	localMs := s.LocalRuntimeMs(ctx, data.Path)
+	localMs := s.LocalRuntimeMs(ctx, root, data.Path)
 	if officialMs > 0 && localMs > 0 {
 		data.OfficialClock = msClock(officialMs)
 		data.LocalClock = msClock(localMs)
@@ -309,7 +311,7 @@ func (s *Server) handleMatchRowSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 type chapterPlanData struct {
-	Source   string // audnexus|existing|files|single
+	Source   string // pipeline.Source* value; also the verdict's CSS class suffix
 	Icon     string
 	Verdict  string
 	Reason   string
@@ -321,14 +323,13 @@ type chapterPlanData struct {
 // the selected match and reports the verdict, so "auto" is never opaque.
 func (s *Server) handleMatchChapterPlan(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	set := s.settings()
 	mode := q.Get("mode")
 	if mode == "" {
 		mode = pipeline.ChapterModeAuto
 	}
 	data := chapterPlanData{}
 
-	files, err := scan.CollectAudioFiles(set.InputDir, q.Get("path"))
+	files, err := scan.CollectAudioFiles(s.rootDir(q.Get), q.Get("path"))
 	if err != nil {
 		data.Err = err.Error()
 		s.render.partial(w, "match", "chapter_plan", data)
@@ -357,10 +358,10 @@ func (s *Server) handleMatchChapterPlan(w http.ResponseWriter, r *http.Request) 
 
 	var provider *metadata.ChapterInfo
 	if asin, region, ok := strings.Cut(q.Get("choice"), "|"); ok && asin != "" {
-		if provider, _ = s.store.CachedChapters(asin, region); provider == nil {
+		if provider, _ = s.store.CachedChapters(aggregate.SourceAudnexus, asin, region); provider == nil {
 			if ch, err := s.provider().GetChapters(ctx, asin, region); err == nil {
 				provider = ch
-				s.store.CacheChapters(asin, region, ch)
+				s.store.CacheChapters(aggregate.SourceAudnexus, asin, region, ch)
 			} else if !metadata.IsNotFound(err) {
 				data.Warnings = append(data.Warnings, "Chapter lookup failed ("+err.Error()+") — decision shown without provider data.")
 			}
@@ -377,25 +378,29 @@ func (s *Server) handleMatchChapterPlan(w http.ResponseWriter, r *http.Request) 
 
 	n := len(plan.Chapters)
 	switch plan.Source {
-	case "audnexus":
+	case pipeline.SourceProvider:
 		// No reason line: the row summary right above already carries the
 		// official-vs-local runtime comparison.
 		data.Icon, data.Verdict = "🌐", fmt.Sprintf("Will embed Audible's %d chapters.", n)
-	case "existing":
+	case pipeline.SourceExisting:
 		data.Icon, data.Verdict = "📼", fmt.Sprintf("Will keep the file's own %d chapters.", n)
 		if mode == pipeline.ChapterModeExisting {
 			data.Reason = "You chose to keep them."
 		} else if provider == nil {
 			data.Reason = "No usable Audible chapter data" + choiceHint(q.Get("choice")) + "."
 		}
-	case "files":
+	case pipeline.SourceFiles:
 		data.Icon, data.Verdict = "🧩", fmt.Sprintf("Will generate %d chapters from the file boundaries.", n)
 		if provider == nil && mode != pipeline.ChapterModeExisting {
 			data.Reason = "No usable Audible chapter data" + choiceHint(q.Get("choice")) + "."
 		}
-	case "single":
+	case pipeline.SourceSingle:
 		data.Icon, data.Verdict = "▭", "Will embed one whole-book chapter."
 		data.Reason = "No chapter data anywhere: not from Audible, none embedded in the file."
+	case pipeline.SourceTitlesFiles:
+		data.Icon, data.Verdict = "🔀", fmt.Sprintf("Will embed %d chapters: Audible's titles on your file boundaries.", n)
+	case pipeline.SourceTitlesExisting:
+		data.Icon, data.Verdict = "🔀", fmt.Sprintf("Will embed %d chapters: Audible's titles on the file's own timings.", n)
 	}
 	s.render.partial(w, "match", "chapter_plan", data)
 }

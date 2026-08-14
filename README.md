@@ -22,6 +22,12 @@ chapterization abilities.
   ASIN entry with live validation, and per-book region, cleanup and chapter
   overrides. Drop books from the batch with **Remove**. Nothing is queued
   until you confirm.
+- **Metadata aggregation** — book metadata is merged field-by-field from
+  Audnexus *and* the Audible catalog, so a missing series, description or
+  low-res cover in one source is filled from the other. Every field's origin
+  is recorded on the job, and a **Metadata…** panel on the match screen shows
+  both catalogs side by side and lets you pick the source per field where they
+  disagree.
 - **Chapter preview** — before converting, play the source straight from the
   server (HTTP Range streaming, so it works remotely too) and click any
   embedded chapter to hear whether it lines up. Load the Audible chapter
@@ -39,6 +45,20 @@ chapterization abilities.
   the file's own chapters, otherwise chapters derived from file boundaries with
   cleaned filename titles. A multi-file book never ends up chapterless.
   Optionally writes the classic `Book.chapters.txt` sidecar next to the m4b.
+- **Chapter title mix-and-match** — when your rip's *timings* are right but its
+  chapter *names* are junk ("Track 01"), put Audible's titles onto your file
+  boundaries or the file's own embedded timings. Counts are matched strictly
+  (short "Opening/End Credits" stingers the rip lacks are skipped
+  automatically); on any mismatch it falls back to the automatic decision.
+- **Library — retag what you already have** — browse the output volume (or
+  filter the whole thing from one search box), pick one or more `.m4b` files,
+  and rewrite their tags and chapters through the same match screen imports
+  use. Files this app produced re-match in one click from the ASIN in their own
+  atoms; files from other tools are recognized too. Optionally rename and move
+  them to the current path template, with an old → new preview per file. The
+  audio is never re-encoded, and the file is never edited in place: it is
+  stream-copied, tagged, verified, and only then swapped in — so a failure or a
+  cancel always leaves the original untouched.
 - **Output where you want it** — a dedicated `/output` volume with a safe path
   template (`{author}/{series_name}/{title}/{title} [{asin}]` by default; also
   `{narrator}`, `{subtitle}`, `{series_position}`, `{year}`). Missing variables
@@ -140,8 +160,10 @@ resolve, otherwise a simulated one so the whole UI still works. Fixture books:
 the invariants worth knowing before changing anything.
 
 Architecture in one paragraph: `internal/scan` lists and orders input files;
-`internal/metadata` talks to the Audible catalog (search) and Audnexus (books +
-chapters) behind a provider interface; `internal/match` normalizes names and
+`internal/metadata` talks to the Audible catalog (search + product details) and
+Audnexus (books + chapters) behind a provider interface, with
+`internal/metadata/aggregate` merging the per-source records field by field
+with provenance; `internal/match` normalizes names and
 scores candidates; `internal/queue` runs a persistent job queue (SQLite via
 `internal/store`) with worker goroutines and an SSE broker; `internal/pipeline`
 probes with ffprobe, merges/transcodes with ffmpeg, resolves chapters, tags

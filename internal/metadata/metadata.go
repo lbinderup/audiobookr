@@ -59,6 +59,12 @@ type Book struct {
 	Summary     string `json:"summary"`
 	RuntimeMin  int    `json:"runtime_min"`
 	CoverURL    string `json:"cover_url"`
+
+	// Sources records which catalog supplied each logical field, keyed by the
+	// field names in internal/metadata/aggregate ("title", "series", …) with
+	// source ids ("audnexus", "audible") as values. Nil on books fetched from
+	// a single source and on job snapshots created before aggregation existed.
+	Sources map[string]string `json:"sources,omitempty"`
 }
 
 // Chapter offsets are relative to the start of the complete audiobook.
@@ -229,6 +235,21 @@ type Provider interface {
 	// GetChapters fetches chapter data; may return ErrNotFound when the
 	// provider has none for this edition.
 	GetChapters(ctx context.Context, asin, region string) (*ChapterInfo, error)
+}
+
+// ValidASIN reports whether s looks like an ASIN (10 alphanumeric chars).
+// A domain fact about ASINs rather than an Audnexus detail, so every source —
+// the catalogs, and the atoms embedded in a local file — validates alike.
+func ValidASIN(s string) bool {
+	if len(s) != 10 {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // ErrNotFound is returned for unknown ASINs (including wrong-region lookups).

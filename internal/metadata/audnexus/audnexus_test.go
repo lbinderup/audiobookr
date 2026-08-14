@@ -92,24 +92,6 @@ func TestBlurbFallsBackToDescription(t *testing.T) {
 	}
 }
 
-func TestHTMLToText(t *testing.T) {
-	cases := map[string]string{
-		"":                              "",
-		"plain":                         "plain",
-		"<p>one</p><p>two</p>":          "one\n\ntwo",
-		"a<br>b":                        "a\n\nb",
-		"<i>x</i> &amp; <b>y</b>":       "x & y",
-		"&quot;q&quot; &#39;s&#39;":     `"q" 's'`,
-		"<p>trailing space </p>":        "trailing space",
-		"<ul><li>a</li><li>b</li></ul>": "a\n\nb",
-	}
-	for in, want := range cases {
-		if got := htmlToText(in); got != want {
-			t.Errorf("htmlToText(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestGetChaptersParsesLiveShape(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/books/B08G9PRS1K/chapters" {

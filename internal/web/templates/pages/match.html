@@ -1,9 +1,15 @@
 {{define "content"}}
 <section class="card">
+  {{if .IsLibrary}}
+  <h1>Retag</h1>
+  <p class="muted">Assign an Audible match to each library file, adjust chapters if needed, then rewrite their tags. The audio is never re-encoded.</p>
+  {{else}}
   <h1>Match</h1>
   <p class="muted">Assign an Audible match to each book, adjust chapters if needed, then queue the conversions.</p>
+  {{end}}
 
-  <form method="post" action="/queue" id="match-form">
+  <form method="post" action="/queue" id="match-form" data-root="{{.Root}}">
+    <input type="hidden" name="root" value="{{.Root}}">
     <ul class="match-list">
       {{range .Items}}
       <li class="match-item" id="item-{{.Index}}">
@@ -17,9 +23,16 @@
               <div class="muted row-line">{{.RelPath}} · {{.Files}} audio file{{if ne .Files 1}}s{{end}}{{if .Err}} · <span class="err-text">{{.Err}}</span>{{end}}</div>
             </div>
             <div class="chapter-plan"></div>
+            {{if $.IsLibrary}}
+            <div class="muted row-line current-tags">Currently tagged as:
+              {{if .Current}}<strong>{{if .Current.Title}}{{.Current.Title}}{{else}}(no title){{end}}</strong>{{with .Current.SeriesName}} · {{.}}{{end}}{{if .Current.Authors}} · {{index .Current.Authors 0}}{{end}}{{else}}<em>could not read this file's tags</em>{{end}}
+            </div>
+            <div class="rename-preview"></div>
+            {{end}}
             {{if not .Err}}
             <div class="row-chapters">
               <button type="button" class="btn-ghost" onclick="openChapterEditor(this, {{.Index}})">Chapters…</button>
+              <button type="button" class="btn-ghost" onclick="openMetadataEditor(this, {{.Index}})">Metadata…</button>
             </div>
             {{end}}
           </div>
@@ -29,12 +42,14 @@
             <button type="button" class="btn-ghost match-remove"
                     title="Remove from this batch (the files stay in the input folder)"
                     onclick="removeMatchItem(this)">✕ Remove</button>
+            {{if not $.IsLibrary}}
             <select name="cleanup:{{.RelPath}}" class="match-cleanup" title="What happens to the source files after a successful conversion">
               <option value="">After: default ({{$.CleanupDefault}})</option>
               <option value="leave">After: leave sources</option>
               <option value="move">After: move to completed</option>
               <option value="delete">After: delete sources</option>
             </select>
+            {{end}}
           </div>
           {{else}}
           <div class="row-actions">
@@ -59,23 +74,34 @@
             <button type="button" class="btn-ghost"
                     hx-get="/match/candidates"
                     hx-target="#candidates-{{.Index}}"
-                    hx-vals='js:{path: {{.RelPath | printf "%q"}}, q: document.getElementById("q-{{.Index}}").value, region: document.getElementById("region-{{.Index}}").value}'>
+                    hx-vals='js:{path: {{.RelPath | printf "%q"}}, q: document.getElementById("q-{{.Index}}").value, region: document.getElementById("region-{{.Index}}").value, root: matchRoot()}'>
               Search
             </button>
             <input type="text" class="match-asin" id="asin-{{.Index}}" placeholder="…or paste ASIN" maxlength="10" spellcheck="false">
             <button type="button" class="btn-ghost"
                     hx-get="/match/lookup"
                     hx-target="#candidates-{{.Index}}"
-                    hx-vals='js:{path: {{.RelPath | printf "%q"}}, asin: document.getElementById("asin-{{.Index}}").value, region: document.getElementById("region-{{.Index}}").value}'>
+                    hx-vals='js:{path: {{.RelPath | printf "%q"}}, asin: document.getElementById("asin-{{.Index}}").value, region: document.getElementById("region-{{.Index}}").value, root: matchRoot()}'>
               Look up
             </button>
           </div>
+          {{if .ASIN}}
+          {{/* The file already names its own book, so look that up directly
+               instead of guessing from a keyword search. */}}
+          <div class="match-candidates" id="candidates-{{.Index}}"
+               hx-get="/match/lookup"
+               hx-trigger="load"
+               hx-vals='js:{path: {{.RelPath | printf "%q"}}, asin: {{.ASIN | printf "%q"}}, region: {{$.Region | printf "%q"}}, root: matchRoot()}'>
+            <span class="muted">Looking up {{.ASIN}} from the file's own tags…</span>
+          </div>
+          {{else}}
           <div class="match-candidates" id="candidates-{{.Index}}"
                hx-get="/match/candidates"
                hx-trigger="load"
-               hx-vals='js:{path: {{.RelPath | printf "%q"}}, q: {{.Keywords | printf "%q"}}, title: {{.Title | printf "%q"}}, author: {{.Author | printf "%q"}}, region: {{$.Region | printf "%q"}}}'>
+               hx-vals='js:{path: {{.RelPath | printf "%q"}}, q: {{.Keywords | printf "%q"}}, title: {{.Title | printf "%q"}}, author: {{.Author | printf "%q"}}, region: {{$.Region | printf "%q"}}, root: matchRoot()}'>
             <span class="muted">Searching…</span>
           </div>
+          {{end}}
         </dialog>
 
         <dialog class="chapter-dialog">
@@ -88,32 +114,60 @@
               <option value="">Chapters: auto</option>
               <option value="existing">{{if gt .Files 1}}Chapters: one per file (boundaries){{else}}Chapters: keep file's own{{end}}</option>
               <option value="provider">Chapters: force Audible's</option>
+              {{if gt .Files 1}}
+              <option value="titles-files">Chapters: Audible's titles on file boundaries</option>
+              {{else}}
+              <option value="titles-existing">Chapters: Audible's titles on the file's own timings</option>
+              {{end}}
             </select>
           </div>
           <div id="preview-{{.Index}}" class="preview-target"></div>
+        </dialog>
+
+        <dialog class="metadata-dialog">
+          <div class="dialog-head">
+            <h2>Metadata · {{.RelPath}}</h2>
+            <button type="button" class="btn-ghost btn-small" onclick="this.closest('dialog').close()">✕ Close</button>
+          </div>
+          <div id="msources-{{.Index}}" class="msources-target"></div>
         </dialog>
         {{end}}
       </li>
       {{end}}
     </ul>
 
+    {{if .IsLibrary}}
+    <label class="rename-toggle">
+      <input type="checkbox" name="rename" value="1" onchange="renameToggled()">
+      Also rename and move files to match the path template <code>{{.PathTemplate}}</code>
+      <span class="muted">— off means only the tags change; files stay where they are.</span>
+    </label>
+    {{end}}
+
     <div class="selection-bar">
       <span id="match-count" class="muted">No matches confirmed</span>
       <span>
         <a href="/import" class="btn-ghost">← Back</a>
-        <button type="submit" class="btn-primary" id="queue-btn" disabled>Queue conversion →</button>
+        <button type="submit" class="btn-primary" id="queue-btn" disabled>
+          {{if .IsLibrary}}Retag files →{{else}}Queue conversion →{{end}}
+        </button>
       </span>
     </div>
   </form>
 
   <script>
+    // Which volume this batch works on: "" for imports, "library" for retags.
+    // Declared once on the form so every request the page makes agrees, and
+    // read lazily because htmx swaps rows in after load.
+    const matchRoot = () => document.getElementById('match-form').dataset.root || '';
+
     function updateMatchCount() {
-      const total = document.querySelectorAll('.match-item .row-actions .match-cleanup').length;
+      const total = document.querySelectorAll('.match-item').length;
       const chosen = new Set(
         [...document.querySelectorAll('#match-form input[type=radio][name^="match:"]:checked')].map(r => r.name)
       ).size;
       document.getElementById('match-count').textContent =
-        chosen === 0 ? 'No matches confirmed' : chosen + ' of ' + total + ' matched';
+        chosen === 0 ? 'Nothing matched yet' : chosen + ' of ' + total + ' matched';
       document.getElementById('queue-btn').disabled = chosen === 0;
     }
 
@@ -129,7 +183,24 @@
         target.dataset.loaded = '1';
         htmx.ajax('GET', '/match/preview', {
           target: target,
-          values: { path: item.querySelector('input[name="paths"]').value },
+          values: { path: item.querySelector('input[name="paths"]').value, root: matchRoot() },
+        });
+      }
+    }
+    // The per-field source picker. Reloads whenever the assigned match differs
+    // from what the panel last rendered (dataset.loaded tracks the choice), so
+    // switching candidates never shows another book's fields.
+    function openMetadataEditor(el, idx) {
+      const item = el.closest('.match-item');
+      item.querySelector('.metadata-dialog')?.showModal();
+      const target = document.getElementById('msources-' + idx);
+      const choice = item.querySelector('input[type=radio][name^="match:"]:checked')?.value || '';
+      if (target && target.dataset.loaded !== choice) {
+        target.dataset.loaded = choice;
+        target.innerHTML = '<span class="muted">Loading…</span>';
+        htmx.ajax('GET', '/match/metadata-sources', {
+          target: target,
+          values: { path: item.querySelector('input[name="paths"]').value, choice: choice, root: matchRoot() },
         });
       }
     }
@@ -155,7 +226,8 @@
       if (!box || !choice || box.dataset.choice === choice) return;
       box.dataset.choice = choice;
       const path = item.querySelector('input[name="paths"]').value;
-      fetch('/match/row-summary?path=' + encodeURIComponent(path) + '&choice=' + encodeURIComponent(choice))
+      fetch('/match/row-summary?path=' + encodeURIComponent(path) + '&choice=' + encodeURIComponent(choice)
+            + '&root=' + encodeURIComponent(matchRoot()))
         .then(r => r.text()).then(html => {
           box.innerHTML = html;
           const cover = box.querySelector('[data-cover]')?.dataset.cover;
@@ -276,7 +348,8 @@
       const seek = () => { audio.currentTime = local; audio.play(); };
       if (audio.dataset.rel !== f.rel) {
         audio.dataset.rel = f.rel;
-        audio.src = '/preview/audio?path=' + encodeURIComponent(f.rel);
+        audio.src = '/preview/audio?path=' + encodeURIComponent(f.rel)
+                  + '&root=' + encodeURIComponent(matchRoot());
         audio.addEventListener('loadedmetadata', seek, { once: true });
       } else if (audio.readyState >= 1) {
         seek();
@@ -318,13 +391,41 @@
       const path = item.querySelector('input[name="paths"]').value;
       const choice = item.querySelector('input[type=radio][name^="match:"]:checked')?.value || '';
       const mode = item.querySelector('select[name^="chapters:"]')?.value || '';
-      const params = new URLSearchParams({ path, choice, mode });
+      const params = new URLSearchParams({ path, choice, mode, root: matchRoot() });
       const sv = shiftVals(path);
       for (const k in sv) params.set(k, sv[k]);
       target.innerHTML = '<span class="muted">Deciding chapters…</span>';
       fetch('/match/chapter-plan?' + params.toString())
         .then(r => r.text()).then(html => { target.innerHTML = html; })
         .catch(() => { target.innerHTML = ''; });
+    }
+
+    // ---- rename preview (library retags) -------------------------------------
+    // Shows where each file would move, computed server-side by the same code
+    // the retag runs, so the preview can't promise a path the job won't produce.
+    function renameEnabled() {
+      return document.querySelector('input[name="rename"]')?.checked || false;
+    }
+    function updateRenamePreview(item) {
+      const target = item.querySelector('.rename-preview');
+      if (!target) return;
+      if (!renameEnabled()) { target.innerHTML = ''; return; }
+      const choice = item.querySelector('input[type=radio][name^="match:"]:checked')?.value || '';
+      if (!choice) { target.innerHTML = ''; return; }
+      const params = new URLSearchParams({
+        path: item.querySelector('input[name="paths"]').value,
+        choice,
+      });
+      // A different per-field source can change the title, and so the path.
+      item.querySelectorAll('input[type=radio][name^="msrc:"]:checked').forEach(r => {
+        params.set('msrc:' + r.name.split(':')[1], r.value);
+      });
+      fetch('/library/rename-preview?' + params.toString())
+        .then(r => r.text()).then(html => { target.innerHTML = html; })
+        .catch(() => { target.innerHTML = ''; });
+    }
+    function renameToggled() {
+      document.querySelectorAll('.match-item').forEach(updateRenamePreview);
     }
 
     // ---- batch editing -------------------------------------------------------
@@ -344,10 +445,12 @@
       const item = e.target.closest('.match-item');
       if (e.target.matches('input[type=radio][name^="match:"]')) {
         updateMatchCount();
-        if (item) { refreshRowSummary(item); updateChapterPlan(item); }
+        if (item) { refreshRowSummary(item); updateChapterPlan(item); updateRenamePreview(item); }
       } else if (e.target.matches('select[name^="chapters:"]') && item) {
         updateChapterPlan(item);
         updateSourceHighlight(item);
+      } else if (e.target.matches('input[type=radio][name^="msrc:"]') && item) {
+        updateRenamePreview(item); // a different title means a different path
       }
     });
     document.body.addEventListener('htmx:afterSwap', () => {

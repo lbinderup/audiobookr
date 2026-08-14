@@ -88,6 +88,14 @@ func (f ffmpegRunner) merge(ctx context.Context, plan mergePlan, listPath, outPa
 	}
 	args = append(args, "-movflags", "+faststart", "-f", "ipod", outPath)
 
+	return f.run(ctx, args, plan.TotalMs, progress, logf)
+}
+
+// run executes ffmpeg, forwarding its stderr to the job log and translating the
+// CR-terminated "time=HH:MM:SS.mm" status lines into 0..1 progress against
+// totalMs. Shared by every ffmpeg invocation so they all report progress and
+// surface the same error detail.
+func (f ffmpegRunner) run(ctx context.Context, args []string, totalMs int64, progress func(float64), logf LogFunc) error {
 	logf("ffmpeg %s", strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, f.ffmpeg, args...)
 	setupProcessKill(cmd)
@@ -111,8 +119,8 @@ func (f ffmpegRunner) merge(ctx context.Context, plan mergePlan, listPath, outPa
 			continue
 		}
 		if ms, ok := parseFFmpegTime(line); ok {
-			if plan.TotalMs > 0 {
-				progress(clamp01(float64(ms) / float64(plan.TotalMs)))
+			if totalMs > 0 {
+				progress(clamp01(float64(ms) / float64(totalMs)))
 			}
 			continue // status spam doesn't go to the log
 		}
@@ -131,6 +139,42 @@ func (f ffmpegRunner) merge(ctx context.Context, plan mergePlan, listPath, outPa
 	}
 	progress(1)
 	return nil
+}
+
+// remuxStripped stream-copies an existing m4b's audio into a new file with
+// every tag, chapter and cover dropped. It is both halves of the retag safety
+// contract in one pass: the library file is never edited in place, and because
+// `tone tag` MERGES metadata rather than replacing it, writing onto a stripped
+// copy is the only way a retag cannot leave a stale atom (an old series, a
+// wrong ASIN) behind from whatever tagged the file before. The flags are
+// deliberately the same ones merge uses, so a retagged file is
+// indistinguishable from a freshly converted one.
+func (f ffmpegRunner) remuxStripped(ctx context.Context, src, dst string, totalMs int64, progress func(float64), logf LogFunc) error {
+	return f.run(ctx, []string{
+		"-hide_banner", "-nostdin", "-y", "-i", src,
+		"-map", "0:a", "-vn", "-c:a", "copy",
+		"-map_chapters", "-1", "-map_metadata", "-1",
+		"-movflags", "+faststart", "-f", "ipod", dst,
+	}, totalMs, progress, logf)
+}
+
+// extractCover pulls a file's own embedded artwork out to the work dir. The
+// strip drops the art stream, so without this a failed cover download (or a
+// catalog with no image) would silently destroy artwork the file already had.
+// Best effort: no art, or art ffmpeg won't demux as an image, yields "".
+func extractCover(ctx context.Context, ffmpeg, src, workDir string, logf LogFunc) string {
+	dst := filepath.Join(workDir, "cover-existing.jpg")
+	cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-nostdin", "-y",
+		"-i", src, "-map", "0:v:0", "-frames:v", "1", "-f", "mjpeg", dst)
+	setupProcessKill(cmd)
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	if fi, err := os.Stat(dst); err != nil || fi.Size() == 0 {
+		return ""
+	}
+	logf("cover: kept the artwork already in the file")
+	return dst
 }
 
 // mergeFdkaac transcodes via a pipe: ffmpeg decodes to WAV on stdout,

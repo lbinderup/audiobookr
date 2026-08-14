@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"audioborker/internal/metadata/aggregate"
 	"audioborker/internal/store"
 )
 
@@ -106,6 +107,21 @@ var funcMap = template.FuncMap{
 	"progressOf": func(j *store.Job) progressData {
 		return progressData{Stage: j.Stage, Percent: int(j.Progress * 100)}
 	},
+	"fieldSources": fieldSources,
+}
+
+type fieldSource struct{ Label, Source string }
+
+// fieldSources orders a Book.Sources provenance map for display. Job
+// snapshots from before aggregation existed have a nil map and render nothing.
+func fieldSources(sources map[string]string) []fieldSource {
+	var out []fieldSource
+	for _, f := range aggregate.Fields {
+		if src, ok := sources[f]; ok {
+			out = append(out, fieldSource{aggregate.Label(f), src})
+		}
+	}
+	return out
 }
 
 // deltaMinutes renders a signed runtime difference as "12 min longer" or

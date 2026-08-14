@@ -13,6 +13,7 @@
   <header class="topbar">
     <a class="brand" href="/import"><span class="brand-mark">◈</span> audioborker</a>
     <nav>
+      <a href="/library" {{if eq .Active "library"}}class="active"{{end}}>Library</a>
       <a href="/import" {{if eq .Active "import"}}class="active"{{end}}>Import</a>
       <a href="/queue" {{if eq .Active "queue"}}class="active"{{end}}>Queue</a>
       <a href="/settings" {{if eq .Active "settings"}}class="active"{{end}}>Settings</a>

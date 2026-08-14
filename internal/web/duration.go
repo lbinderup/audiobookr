@@ -28,18 +28,20 @@ func newDurationCache() *durationCache {
 }
 
 // LocalRuntimeMs returns the combined duration of everything that would be
-// merged for this selection. It returns 0 when the duration can't be
-// determined — callers treat that as "unknown" rather than failing.
-func (s *Server) LocalRuntimeMs(ctx context.Context, rel string) int64 {
-	set := s.settings()
-	files, err := scan.CollectAudioFiles(set.InputDir, rel)
+// merged for this selection under root. It returns 0 when the duration can't
+// be determined — callers treat that as "unknown" rather than failing.
+func (s *Server) LocalRuntimeMs(ctx context.Context, root, rel string) int64 {
+	files, err := scan.CollectAudioFiles(root, rel)
 	if err != nil || len(files) == 0 {
 		return 0
 	}
 
+	// The key carries the root: the same relative path can name a different
+	// file under the import volume and under the library.
+	key := root + "\x00" + rel
 	sig := filesSignature(files)
 	s.durations.mu.Lock()
-	entry, ok := s.durations.m[rel]
+	entry, ok := s.durations.m[key]
 	s.durations.mu.Unlock()
 	if ok && entry.sig == sig {
 		return entry.totalMs
@@ -55,15 +57,15 @@ func (s *Server) LocalRuntimeMs(ctx context.Context, rel string) int64 {
 	}
 
 	s.durations.mu.Lock()
-	s.durations.m[rel] = durationEntry{sig: sig, totalMs: totalMs}
+	s.durations.m[key] = durationEntry{sig: sig, totalMs: totalMs}
 	s.durations.mu.Unlock()
 	return totalMs
 }
 
 // LocalRuntimeMin is LocalRuntimeMs rounded to the nearest minute, for
 // candidate scoring.
-func (s *Server) LocalRuntimeMin(ctx context.Context, rel string) int {
-	return int((s.LocalRuntimeMs(ctx, rel) + 30_000) / 60_000)
+func (s *Server) LocalRuntimeMin(ctx context.Context, root, rel string) int {
+	return int((s.LocalRuntimeMs(ctx, root, rel) + 30_000) / 60_000)
 }
 
 // filesSignature cheaply identifies a set of files by count, size and mtime,

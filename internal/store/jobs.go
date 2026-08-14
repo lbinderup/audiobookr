@@ -20,10 +20,24 @@ const (
 	StatusCancelled = "cancelled"
 )
 
+// Job kinds. A convert job merges source files into a new m4b; a retag job
+// rewrites the tags and chapters of an m4b already in the library. The kind
+// lives in JobOptions rather than its own column because options_json is
+// exactly the snapshot of "what the pipeline should do" — and because
+// CloneForRetry copies Options verbatim, a retried retag stays a retag with no
+// extra bookkeeping.
+const (
+	KindConvert = "" // zero value: every job queued before the Library existed
+	KindRetag   = "retag"
+)
+
 // JobOptions is the per-job snapshot of every setting the pipeline consults.
 // Snapshotting makes retries reproducible and isolates running jobs from
 // settings edits.
 type JobOptions struct {
+	Kind string `json:"kind,omitempty"` // "" = convert
+	// InputDir is the root Job.InputPath is relative to: the import volume for
+	// a conversion, the library (output volume) for a retag.
 	InputDir         string `json:"input_dir"`
 	OutputDir        string `json:"output_dir"`
 	CompletedDir     string `json:"completed_dir"`
@@ -41,7 +55,14 @@ type JobOptions struct {
 	// ChapterShiftMs is the legacy fixed-only field, still read so old jobs
 	// retry identically.
 	ChapterShiftMs int64 `json:"chapter_shift_ms,omitempty"`
+	// Rename lets a retag job also move the file to the path the snapshotted
+	// template renders. Off means only the atoms change.
+	Rename bool `json:"rename,omitempty"`
 }
+
+// IsRetag reports whether this job rewrites a library file in place rather
+// than producing a new one.
+func (o JobOptions) IsRetag() bool { return o.Kind == KindRetag }
 
 // EffectiveChapterShift merges the current spec with the legacy field.
 func (o JobOptions) EffectiveChapterShift() metadata.ShiftSpec {
@@ -233,13 +254,18 @@ func (s *Store) CloneForRetry(id string) (*Job, error) {
 	return clone, nil
 }
 
-// HasActiveJobForPath reports whether a pending or running job already
-// covers this input path — guards against double-queueing the same book.
-func (s *Store) HasActiveJobForPath(inputPath string) (bool, error) {
+// HasActiveJobForPath reports whether a pending or running job of the same
+// kind already covers this input path — guards against double-queueing the
+// same book. The kind matters because a conversion's path is relative to the
+// import volume while a retag's is relative to the library, so the same string
+// can legitimately name two different files.
+func (s *Store) HasActiveJobForPath(kind, inputPath string) (bool, error) {
 	var n int
-	err := s.db.QueryRow(
-		"SELECT COUNT(*) FROM jobs WHERE input_path = ? AND status IN ('pending','running')",
-		inputPath).Scan(&n)
+	err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM jobs
+		WHERE input_path = ? AND status IN ('pending','running')
+		  AND COALESCE(json_extract(options_json, '$.kind'), '') = ?`,
+		inputPath, kind).Scan(&n)
 	return n > 0, err
 }
 

@@ -29,6 +29,7 @@ import (
 
 	"audioborker/internal/config"
 	"audioborker/internal/metadata"
+	"audioborker/internal/metadata/aggregate"
 	"audioborker/internal/metadata/audnexus"
 	"audioborker/internal/pipeline"
 	"audioborker/internal/queue"
@@ -62,14 +63,14 @@ type cachedChapters struct {
 }
 
 func (c cachedChapters) GetChapters(ctx context.Context, asin, region string) (*metadata.ChapterInfo, error) {
-	if ch, err := c.st.CachedChapters(asin, region); err == nil && ch != nil {
+	if ch, err := c.st.CachedChapters(aggregate.SourceAudnexus, asin, region); err == nil && ch != nil {
 		return ch, nil
 	}
 	ch, err := c.prov.GetChapters(ctx, asin, region)
 	if err != nil {
 		return nil, err
 	}
-	c.st.CacheChapters(asin, region, ch)
+	c.st.CacheChapters(aggregate.SourceAudnexus, asin, region, ch)
 	return ch, nil
 }
 

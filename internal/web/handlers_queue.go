@@ -10,11 +10,37 @@ import (
 	"strings"
 	"time"
 
+	"audioborker/internal/metadata/aggregate"
 	"audioborker/internal/scan"
 	"audioborker/internal/store"
 )
 
 const jobsPerPage = 20
+
+// metadataOverrides collects the match screen's per-field source choices for
+// one item: msrc:{field}:{relpath}=source. Values equal to the automatic
+// winner are submitted too (checked radios), which is harmless — the merge
+// treats them as identical to no override.
+func metadataOverrides(form url.Values, relPath string) map[string]string {
+	return metadataOverridesFor(func(key string) string { return form.Get(key + ":" + relPath) })
+}
+
+// metadataOverridesFor collects the per-field source picks through an
+// arbitrary key lookup, so the queue handler (form keys suffixed with the item
+// path) and the rename preview (query keys, one item per request) share one
+// parser rather than two that can drift.
+func metadataOverridesFor(get func(string) string) map[string]string {
+	var out map[string]string
+	for _, f := range aggregate.Fields {
+		if v := get("msrc:" + f); v != "" {
+			if out == nil {
+				out = map[string]string{}
+			}
+			out[f] = v
+		}
+	}
+	return out
+}
 
 // handleQueueCreate turns confirmed matches into queued jobs.
 // Form shape: paths=<rel> (repeated) + match:<rel>=<ASIN>|<region>.
@@ -26,6 +52,14 @@ func (s *Server) handleQueueCreate(w http.ResponseWriter, r *http.Request) {
 	set := s.settings()
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
+
+	// A library batch retags files in place instead of converting new ones.
+	retag := isLibrary(r.PostForm.Get)
+	root := s.rootDir(r.PostForm.Get)
+	kind := store.KindConvert
+	if retag {
+		kind = store.KindRetag
+	}
 
 	// Resolve the completed subfolder once: it is stored relative to the
 	// mapped volume so it can never point inside the container itself.
@@ -46,29 +80,39 @@ func (s *Server) handleQueueCreate(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if active, err := s.store.HasActiveJobForPath(p); err == nil && active {
+		if active, err := s.store.HasActiveJobForPath(kind, p); err == nil && active {
 			skipped = append(skipped, p+" (already queued)")
 			continue
 		}
-		files, err := scan.CollectAudioFiles(set.InputDir, p)
+		files, err := scan.CollectAudioFiles(root, p)
 		if err != nil {
 			skipped = append(skipped, p+" ("+err.Error()+")")
 			continue
 		}
-		book, err := s.provider().GetBook(ctx, asin, region)
+		if retag && len(files) != 1 {
+			skipped = append(skipped, p+" (a retag covers one file at a time)")
+			continue
+		}
+		res, err := s.aggregator().GetBook(ctx, asin, region, metadataOverrides(r.PostForm, p))
 		if err != nil {
 			skipped = append(skipped, p+" (metadata: "+err.Error()+")")
 			continue
 		}
-		s.store.CacheBook(asin, region, book)
+		book := res.Book
 
-		cleanup := set.CleanupMode
-		if o := r.PostForm.Get("cleanup:" + p); o != "" {
-			cleanup = o
-		}
-		if cleanup == "move" && !completedMounted {
-			skipped = append(skipped, p+" (cleanup \"move\" needs a volume mapped to "+s.cfg.CompletedDir+")")
-			continue
+		// Cleanup acts on the job's *source*. For a retag that source is the
+		// library file itself, so "delete" or "move" would destroy the book
+		// that was just rewritten — a retag never cleans up.
+		cleanup := "leave"
+		if !retag {
+			cleanup = set.CleanupMode
+			if o := r.PostForm.Get("cleanup:" + p); o != "" {
+				cleanup = o
+			}
+			if cleanup == "move" && !completedMounted {
+				skipped = append(skipped, p+" (cleanup \"move\" needs a volume mapped to "+s.cfg.CompletedDir+")")
+				continue
+			}
 		}
 		chapterMode := r.PostForm.Get("chapters:" + p) // "" = auto
 		chapterShift := shiftSpecFrom(func(key string) string {
@@ -82,7 +126,10 @@ func (s *Server) handleQueueCreate(w http.ResponseWriter, r *http.Request) {
 			Region:      region,
 			Metadata:    *book,
 			Options: store.JobOptions{
-				InputDir:         set.InputDir,
+				Kind: kind,
+				// For a retag this is the library root, so InputPath still
+				// resolves the same way it does for a conversion.
+				InputDir:         root,
 				OutputDir:        set.OutputDir,
 				CompletedDir:     completedPath,
 				CleanupMode:      cleanup,
@@ -93,6 +140,7 @@ func (s *Server) handleQueueCreate(w http.ResponseWriter, r *http.Request) {
 				AudnexusURL:      set.AudnexusURL,
 				ChapterMode:      chapterMode,
 				ChapterShift:     chapterShift,
+				Rename:           retag && r.PostForm.Get("rename") != "",
 			},
 		}
 		if err := s.store.CreateJob(job); err != nil {

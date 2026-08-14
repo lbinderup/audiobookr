@@ -51,6 +51,24 @@ type product struct {
 	ProductImages map[string]string `json:"product_images"`
 }
 
+// productDetail extends the search subset with fields the single-product
+// endpoint returns when asked for the extra response groups.
+type productDetail struct {
+	product
+	PublisherName        string `json:"publisher_name"`
+	PublisherSummary     string `json:"publisher_summary"`     // full blurb, HTML
+	MerchandisingSummary string `json:"merchandising_summary"` // teaser, sometimes HTML
+	Series               []struct {
+		Title    string `json:"title"`
+		Sequence string `json:"sequence"`
+	} `json:"series"`
+	CategoryLadders []struct {
+		Ladder []struct {
+			Name string `json:"name"`
+		} `json:"ladder"`
+	} `json:"category_ladders"`
+}
+
 // Search queries the catalog. Empty query fields are omitted.
 func (c *Client) Search(ctx context.Context, q metadata.SearchQuery) ([]metadata.SearchResult, error) {
 	tld, ok := regionTLD[q.Region]
@@ -119,6 +137,99 @@ func (c *Client) Search(ctx context.Context, q metadata.SearchQuery) ([]metadata
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// GetBook fetches one catalog product. Notably contributes fields Audnexus
+// sometimes lacks: the series list (Audnexus exposes only one primary series)
+// and a second, often fresher publisher blurb. Per this package's contract,
+// callers must treat failures as "source unavailable", never as fatal. A 404
+// — and a 200 whose product carries no title, which is what non-audiobook or
+// region-restricted ASINs return — maps to metadata.NotFound.
+func (c *Client) GetBook(ctx context.Context, asin, region string) (*metadata.Book, error) {
+	tld, ok := regionTLD[region]
+	if !ok {
+		return nil, fmt.Errorf("unknown region %q", region)
+	}
+	params := url.Values{
+		"response_groups": {"contributors,product_desc,media,product_attrs,product_extended_attrs,series,category_ladders"},
+		"image_sizes":     {"500,1000"},
+	}
+	u := fmt.Sprintf("https://api.audible%s/1.0/catalog/products/%s?%s", tld, url.PathEscape(asin), params.Encode())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", c.userAgent)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("audible product: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, metadata.NotFound("not in Audible's " + region + " catalog")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("audible product: HTTP %d", resp.StatusCode)
+	}
+
+	var body struct {
+		Product productDetail `json:"product"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("audible product: decode: %w", err)
+	}
+	p := body.Product
+	if p.ASIN == "" || p.Title == "" {
+		return nil, metadata.NotFound("Audible has no audiobook data for this ASIN in region " + region)
+	}
+
+	book := &metadata.Book{
+		ASIN:        p.ASIN,
+		Region:      region,
+		Title:       p.Title,
+		Subtitle:    p.Subtitle,
+		Publisher:   p.PublisherName,
+		Language:    p.Language,
+		Description: metadata.HTMLToText(p.MerchandisingSummary),
+		Summary:     metadata.HTMLToText(p.PublisherSummary),
+		RuntimeMin:  p.RuntimeMin,
+		Year:        yearOf(p.ReleaseDate),
+	}
+	if len(p.ReleaseDate) >= 10 {
+		book.ReleaseDate = p.ReleaseDate[:10]
+	}
+	if book.CoverURL = p.ProductImages["1000"]; book.CoverURL == "" {
+		book.CoverURL = p.ProductImages["500"]
+	}
+	for _, a := range p.Authors {
+		book.Authors = append(book.Authors, a.Name)
+	}
+	for _, n := range p.Narrators {
+		book.Narrators = append(book.Narrators, n.Name)
+	}
+	// The series list can carry umbrella collections with no sequence (e.g.
+	// "The Cosmere" alongside "The Stormlight Archive") — prefer the first
+	// numbered entry, which matches what Audnexus calls the primary series.
+	for _, s := range p.Series {
+		if s.Sequence != "" {
+			book.SeriesName, book.SeriesPosition = s.Title, s.Sequence
+			break
+		}
+	}
+	if book.SeriesName == "" && len(p.Series) > 0 {
+		book.SeriesName = p.Series[0].Title
+	}
+	// Each category ladder is a path like Genres → Fantasy → Epic; the first
+	// rung is the genre. Ladders repeat it, so dedupe preserving order.
+	seen := map[string]bool{}
+	for _, cl := range p.CategoryLadders {
+		if len(cl.Ladder) == 0 || seen[cl.Ladder[0].Name] {
+			continue
+		}
+		seen[cl.Ladder[0].Name] = true
+		book.Genres = append(book.Genres, cl.Ladder[0].Name)
+	}
+	return book, nil
 }
 
 func yearOf(date string) string {

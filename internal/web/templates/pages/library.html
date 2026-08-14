@@ -1,0 +1,66 @@
+{{define "content"}}
+<section class="card">
+  <h1>Library</h1>
+  <p class="muted">Retag books already in <code>{{.OutputDir}}</code>. Pick one or more files, match them against Audible, and their tags and chapters are rewritten — the audio is never re-encoded.</p>
+
+  {{if .Empty}}
+    <p class="muted">No <code>.m4b</code> files found in the library directory.</p>
+  {{else}}
+  <div class="tree-toolbar">
+    <input type="search" id="lib-search" class="lib-search" spellcheck="false"
+           placeholder="Filter the whole library — try an author, series or title…"
+           hx-get="/library/search"
+           hx-target="#tree"
+           hx-swap="innerHTML"
+           hx-trigger="keyup changed delay:300ms, search"
+           name="q">
+    <button type="button" class="btn-ghost" onclick="document.querySelectorAll('#library-form input[type=checkbox]').forEach(c => c.checked = false); updateCount()">Clear selection</button>
+  </div>
+
+  <form method="post" action="/library/match" id="library-form">
+    <ul class="tree" id="tree">
+      {{template "tree" .Tree}}
+    </ul>
+
+    <div class="selection-bar">
+      <span id="selection-count" class="muted">Nothing selected</span>
+      <button type="submit" class="btn-primary" id="retag-btn" disabled>Retag selected →</button>
+    </div>
+  </form>
+
+  <script>
+    function updateCount() {
+      const n = document.querySelectorAll('#library-form input[type=checkbox]:checked').length;
+      document.getElementById('selection-count').textContent =
+        n === 0 ? 'Nothing selected' : n + ' selected';
+      document.getElementById('retag-btn').disabled = n === 0;
+    }
+    // Selecting a folder means "every book under it", so descendants uncheck;
+    // selecting something inside a checked folder means finer granularity, so
+    // ancestors uncheck. Each selected file becomes its own retag.
+    document.getElementById('library-form').addEventListener('change', e => {
+      if (!e.target.matches('input[type=checkbox]')) return;
+      if (e.target.checked) {
+        const ownDetails = e.target.closest('summary')?.closest('details');
+        if (ownDetails) {
+          ownDetails.querySelectorAll(':scope > ul input[type=checkbox]:checked')
+            .forEach(c => { c.checked = false; });
+        }
+        let ancestor = ownDetails
+          ? ownDetails.parentElement.closest('details')
+          : e.target.closest('details');
+        while (ancestor) {
+          const cb = ancestor.querySelector(':scope > summary input[type=checkbox]');
+          if (cb) cb.checked = false;
+          ancestor = ancestor.parentElement.closest('details');
+        }
+      }
+      updateCount();
+    });
+    // Swapping the tree for search results (or back) replaces the checkboxes,
+    // so the count has to be recomputed rather than left stale.
+    document.body.addEventListener('htmx:afterSwap', updateCount);
+  </script>
+  {{end}}
+</section>
+{{end}}

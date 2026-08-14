@@ -2,7 +2,8 @@
 <tr id="job-{{.ID}}" sse-swap="job-{{.ID}}-status" hx-swap="outerHTML">
   <td>{{template "status_badge" .Status}}</td>
   <td class="job-title"><a href="/jobs/{{.ID}}">{{if .Metadata.Title}}{{.Metadata.Title}}{{else}}{{.InputPath}}{{end}}</a></td>
-  <td class="muted job-path">{{.InputPath}}</td>
+  {{/* The Source column spans two volumes now, so a retag says so. */}}
+  <td class="muted job-path">{{if .Options.IsRetag}}<span class="source-badge">retag</span> {{end}}{{.InputPath}}</td>
   <td class="job-progress">
     {{if eq .Status "running"}}
       <span sse-swap="job-{{.ID}}-progress" hx-swap="innerHTML">

@@ -13,6 +13,12 @@ func (s *Server) routes() http.Handler {
 		http.Redirect(w, r, "/import", http.StatusFound)
 	})
 
+	mux.HandleFunc("GET /library", s.handleLibrary)
+	mux.HandleFunc("GET /library/tree", s.handleLibraryTree)
+	mux.HandleFunc("GET /library/search", s.handleLibrarySearch)
+	mux.HandleFunc("POST /library/match", s.handleLibraryMatch)
+	mux.HandleFunc("GET /library/rename-preview", s.handleLibraryRenamePreview)
+
 	mux.HandleFunc("GET /import", s.handleImport)
 	mux.HandleFunc("GET /import/tree", s.handleImportTree)
 	mux.HandleFunc("POST /match", s.handleMatch)
@@ -22,6 +28,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /match/provider-chapters", s.handleMatchProviderChapters)
 	mux.HandleFunc("GET /match/chapter-plan", s.handleMatchChapterPlan)
 	mux.HandleFunc("GET /match/row-summary", s.handleMatchRowSummary)
+	mux.HandleFunc("GET /match/metadata-sources", s.handleMatchMetadataSources)
 	mux.HandleFunc("GET /preview/audio", s.handlePreviewAudio)
 
 	mux.HandleFunc("POST /queue", s.handleQueueCreate)

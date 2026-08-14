@@ -1,5 +1,6 @@
 {{define "tree"}}
-{{range .}}
+{{$url := .TreeURL}}
+{{range .Entries}}
 <li>
   {{if .IsDir}}
   <details class="tree-dir">
@@ -15,7 +16,7 @@
         </span>
       </span>
     </summary>
-    <ul class="tree" hx-get="/import/tree?path={{.RelPath | urlquery}}" hx-trigger="intersect once" hx-swap="innerHTML">
+    <ul class="tree" hx-get="{{$url}}?path={{.RelPath | urlquery}}" hx-trigger="intersect once" hx-swap="innerHTML">
       <li class="muted tree-loading">Loading…</li>
     </ul>
   </details>

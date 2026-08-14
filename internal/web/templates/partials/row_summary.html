@@ -10,6 +10,7 @@
   <div class="row-line"><span class="rt-badge rt-{{.BadgeClass}}">⏱ {{.BadgeText}}</span></div>
   {{end}}
   {{end}}
+  {{range .Notes}}<div class="muted row-line">⚠ {{.}}</div>{{end}}
 </div>
 {{else}}
 <div class="row-title"><strong>No match assigned</strong></div>

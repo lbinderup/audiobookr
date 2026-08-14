@@ -17,7 +17,10 @@ cmd/audioborker/main.go   wiring, graceful shutdown, converter selection
 internal/
   config/     env-derived process config (paths, ports, binary locations)
   store/      SQLite (modernc.org/sqlite, CGO off): settings, jobs, metadata cache
-  metadata/   Provider interface; audible/ = catalog search, audnexus/ = books + chapters
+  metadata/   Provider interface; audible/ = catalog search + product details,
+              audnexus/ = books + chapters; aggregate/ = field-by-field merge
+              of the per-source records, with provenance (Book.Sources);
+              embedded/ = a local file's own atoms read as a Book
   match/      filename normalization + candidate scoring (pure functions)
   scan/       input listing, junk filtering, natural sort, disc ordering, selection dedupe
   pathtmpl/   {author}/{title} output templates with safe segment dropping
@@ -30,6 +33,11 @@ Data flow: **Import** (pick files) → **Match** (choose ASIN) → **Queue**
 (persistent jobs) → **pipeline** (probe → plan → merge → chapters → tag →
 move → verify → cleanup).
 
+**Library** reuses that whole flow against the *output* volume: pick existing
+`.m4b` files → the same Match screen (`Root: "library"`) → retag jobs
+(`JobOptions.Kind == store.KindRetag`) → `pipeline.runRetag` (probe → plan →
+copy → chapters → tag → verify → replace).
+
 ## Non-obvious invariants — do not break these
 
 - **`pipeline.Converter` is the seam.** `FakeConverter` lets the entire web UX
@@ -41,6 +49,38 @@ move → verify → cleanup).
 - **Chapter decisions are computed in exactly one place.** The match screen's
   verdict line calls `pipeline.PlanChapters`, which calls the same
   `resolveChapters` the conversion runs. Never fork this logic for display.
+  The title mix modes (`titles-files`/`titles-existing` — provider titles on
+  local timings) live inside `resolveChapters` too, and degrade to the
+  automatic decision on any alignment failure, never to zero chapters.
+- **Only raw per-source records go in `metadata_cache`, never merged books.**
+  The merge (`aggregate.Merge`) is a pure function over the cached records, so
+  per-field overrides and precedence changes need no cache invalidation. The
+  cache PK is `(source, asin, region)`.
+- **An Audible catalog failure must never block queueing.** The aggregator
+  treats the audible source as best-effort (error → note), while an Audnexus
+  transient error fails the queue action — jobs must not silently snapshot a
+  degraded book.
+- **A retag never edits a library file in place, and verifies before
+  replacing.** `runRetag` stream-copies the audio into staging, tags *that*,
+  probes it, and only then renames it over the original — so a failure, a
+  cancel or a crash always leaves the user's file exactly as it was. Never
+  reorder verify after replace, and never use `moveFile` for the swap: its
+  copy+delete fallback would write a partial file over a good one
+  (`replaceFile` requires a real rename for this reason).
+- **The retag's copy is what makes tone's merge semantics safe.** `tone tag`
+  merges rather than replaces, so retagging a file that still had its old atoms
+  would leave stale values behind (a book that loses its series keeps `©mvn`).
+  The copy is an ffmpeg stream-copy with `-map_metadata -1 -map_chapters -1`,
+  so tone always writes onto a blank file. For the same reason the conversion's
+  merge stage must never "optimize" a single AAC input back into a raw byte
+  copy — that bug shipped once and carried foreign atoms (ISBN, RATING) into
+  the library.
+- **Cleanup is forced to `leave` for retag jobs.** `cleanupSource` resolves
+  `InputDir + InputPath`, which for a retag *is* the file just written — a
+  `delete` default would destroy the book it had just fixed.
+- **A retag's chapters come from the pre-copy probe.** The staged copy has no
+  chapters left, and the file's own timings are exactly what
+  `titles-existing` exists to reuse.
 - **Candidate ranking weighs title, author, runtime and language**
   (`match.Signals`). Runtime is measured from the actual files and separates
   abridged/unabridged editions, but is weighted *below* the author match so a
@@ -114,7 +154,8 @@ it is picked up automatically).
 - Pure logic (`pathtmpl`, `scan`, `match`, chapter resolution, bitrate snapping)
   is table-driven unit tested. Add cases there rather than testing via HTTP.
 - API clients are tested against `httptest` servers using fixtures captured
-  from the real Audnexus responses — keep those shapes accurate.
+  from the real Audnexus and Audible catalog responses — keep those shapes
+  accurate: re-capture from the live APIs rather than hand-editing them.
 - Changes visible in the browser should be verified by actually driving the
   running app, not assumed. Real conversions can be verified with
   `tone dump <file> --format json --query '$.meta.chapters'`.

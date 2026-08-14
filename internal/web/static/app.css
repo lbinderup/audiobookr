@@ -291,10 +291,77 @@ details.tree-dir[open] > summary::before { transform: rotate(90deg); }
   min-height: 0;
 }
 .plan-verdict { font-weight: 500; }
-.plan-audnexus { color: var(--accent); }
+.plan-provider { color: var(--accent); }
 .plan-existing { color: var(--ok); }
 .plan-files { color: var(--text); }
 .plan-single { color: var(--text-muted); }
+.plan-titles-files, .plan-titles-existing { color: var(--accent); }
+
+/* Library browser */
+.lib-search {
+  flex: 1 1 18rem;
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
+}
+.lib-path {
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+/* Metadata provenance (job detail + match-screen source picker) */
+.source-badge {
+  font-size: 0.72rem;
+  font-family: ui-monospace, monospace;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 0.35rem;
+  color: var(--text-muted);
+}
+.source-audnexus { color: var(--accent); }
+.source-audible { color: var(--ok); }
+.meta-sources { margin: 0.4rem 0 0.8rem; font-size: 0.85rem; }
+.meta-sources-list {
+  list-style: none;
+  padding: 0.3rem 0 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+
+/* Per-field source picker (Metadata… dialog on the match screen) */
+.metadata-dialog { width: min(48rem, 92vw); }
+.msrc-hint { font-size: 0.82rem; margin: 0 0 0.5rem; }
+.msrc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.msrc-table th, .msrc-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.35rem 0.5rem;
+  border-top: 1px solid var(--border);
+}
+.msrc-table thead th { border-top: none; color: var(--text-muted); font-weight: 500; }
+.msrc-label { white-space: nowrap; color: var(--text-muted); font-weight: 500; }
+.msrc-pick { display: flex; gap: 0.45rem; align-items: baseline; cursor: pointer; }
+.msrc-pick input { flex: none; }
+.msrc-single .source-badge { margin-left: 0.4rem; }
+.msrc-cover { max-width: 90px; border-radius: 4px; display: block; }
+.msrc-current { color: var(--text-muted); }
+.msrc-changed .msrc-label { color: var(--accent); }
+.msrc-changed .msrc-current { text-decoration: line-through; }
+
+/* Library retag: current tags, rename toggle and its preview */
+.current-tags { font-size: 0.82rem; }
+.rename-toggle {
+  display: block;
+  margin: 0.6rem 0 0.2rem;
+  font-size: 0.88rem;
+}
+.rename-toggle code { font-size: 0.8rem; }
+.rename-line { font-size: 0.82rem; overflow-wrap: anywhere; }
 
 /* Chapter preview */
 .chapter-preview {

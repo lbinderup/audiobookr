@@ -68,7 +68,7 @@ func TestResolveChaptersProviderMatch(t *testing.T) {
 		Chapters:   []metadata.Chapter{{Title: "One", StartMs: 0, LengthMs: 180_000}},
 	}
 	r := resolveChapters(ChapterModeAuto, provider, files, 180_000, "Book")
-	if r.Source != "audnexus" || len(r.Chapters) != 1 || len(r.Warnings) != 0 {
+	if r.Source != SourceProvider || len(r.Chapters) != 1 || len(r.Warnings) != 0 {
 		t.Errorf("%+v", r)
 	}
 }
@@ -95,7 +95,7 @@ func TestResolveChaptersInaccurateWarns(t *testing.T) {
 		Chapters:   []metadata.Chapter{{Title: "One"}},
 	}
 	r := resolveChapters(ChapterModeAuto, provider, chapterFixtures(2), 180_000, "Book")
-	if r.Source != "audnexus" || len(r.Warnings) != 1 {
+	if r.Source != SourceProvider || len(r.Warnings) != 1 {
 		t.Errorf("%+v", r)
 	}
 }
@@ -136,7 +136,7 @@ func TestResolveChaptersAutoPrefersProviderWhenBothExistAndRuntimeMatches(t *tes
 		Chapters: []metadata.Chapter{{Title: "Official Chapter", StartMs: 0, LengthMs: 180_000}},
 	}
 	r := resolveChapters(ChapterModeAuto, provider, files, 180_000, "Book")
-	if r.Source != "audnexus" || r.Chapters[0].Title != "Official Chapter" {
+	if r.Source != SourceProvider || r.Chapters[0].Title != "Official Chapter" {
 		t.Errorf("runtime-matching provider should beat existing chapters in auto: %+v", r)
 	}
 }
@@ -162,7 +162,7 @@ func TestResolveChaptersModeProviderForcesDespiteMismatch(t *testing.T) {
 		Chapters: []metadata.Chapter{{Title: "Provider Ch", StartMs: 0, LengthMs: 900_000}},
 	}
 	r := resolveChapters(ChapterModeProvider, provider, chapterFixtures(3), 180_000, "Book")
-	if r.Source != "audnexus" || len(r.Warnings) == 0 {
+	if r.Source != SourceProvider || len(r.Warnings) == 0 {
 		t.Errorf("forced provider should be used with a warning: %+v", r)
 	}
 }
@@ -170,6 +170,138 @@ func TestResolveChaptersModeProviderForcesDespiteMismatch(t *testing.T) {
 func TestResolveChaptersModeProviderWithNoneFallsBack(t *testing.T) {
 	r := resolveChapters(ChapterModeProvider, nil, chapterFixtures(3), 180_000, "Book")
 	if r.Source != "files" || len(r.Warnings) == 0 {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestMixTitlesOnFileBoundariesExactCount(t *testing.T) {
+	files := chapterFixtures(3)
+	provider := &metadata.ChapterInfo{
+		RuntimeMs: 999_000, // way off — mix modes must ignore the runtime gate
+		Chapters: []metadata.Chapter{
+			{Title: "The Beginning", StartMs: 0, LengthMs: 55_000},
+			{Title: "The Middle", StartMs: 55_000, LengthMs: 62_000},
+			{Title: "The End", StartMs: 117_000, LengthMs: 61_000},
+		},
+	}
+	r := resolveChapters(ChapterModeTitlesFiles, provider, files, 180_000, "Book")
+	if r.Source != SourceTitlesFiles || len(r.Chapters) != 3 || len(r.Warnings) != 0 {
+		t.Fatalf("%+v", r)
+	}
+	// Titles from the provider, timings from the files.
+	if r.Chapters[1].Title != "The Middle" || r.Chapters[1].StartMs != 60_000 || r.Chapters[1].LengthMs != 60_000 {
+		t.Errorf("mixed chapter wrong: %+v", r.Chapters[1])
+	}
+}
+
+func TestMixTitlesDropsShortOpeningCredits(t *testing.T) {
+	files := chapterFixtures(2)
+	provider := &metadata.ChapterInfo{
+		BrandIntroMs: 2043,
+		Chapters: []metadata.Chapter{
+			{Title: "Opening Credits", StartMs: 0, LengthMs: 6_000}, // short: brand intro + a breath
+			{Title: "Chapter 1", StartMs: 6_000, LengthMs: 60_000},
+			{Title: "Chapter 2", StartMs: 66_000, LengthMs: 60_000},
+		},
+	}
+	r := resolveChapters(ChapterModeTitlesFiles, provider, files, 120_000, "Book")
+	if r.Source != SourceTitlesFiles || len(r.Chapters) != 2 {
+		t.Fatalf("%+v", r)
+	}
+	if r.Chapters[0].Title != "Chapter 1" || r.Chapters[1].Title != "Chapter 2" {
+		t.Errorf("titles: %+v", r.Chapters)
+	}
+	if len(r.Warnings) != 1 || !strings.Contains(r.Warnings[0], "Opening Credits") {
+		t.Errorf("expected a dropped-chapter note, got %v", r.Warnings)
+	}
+}
+
+func TestMixTitlesDropsIntroAndOutro(t *testing.T) {
+	files := chapterFixtures(2)
+	provider := &metadata.ChapterInfo{
+		Chapters: []metadata.Chapter{
+			{Title: "Opening Credits", LengthMs: 12_000},
+			{Title: "Chapter 1", LengthMs: 60_000},
+			{Title: "Chapter 2", LengthMs: 60_000},
+			{Title: "End Credits", LengthMs: 30_000},
+		},
+	}
+	r := resolveChapters(ChapterModeTitlesFiles, provider, files, 120_000, "Book")
+	if r.Source != SourceTitlesFiles || len(r.Chapters) != 2 ||
+		r.Chapters[0].Title != "Chapter 1" || r.Chapters[1].Title != "Chapter 2" {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestMixTitlesLongExtraChapterFallsBack(t *testing.T) {
+	files := chapterFixtures(2)
+	provider := &metadata.ChapterInfo{
+		Chapters: []metadata.Chapter{
+			{Title: "Prologue", LengthMs: 300_000}, // a real chapter, not a stinger
+			{Title: "Chapter 1", LengthMs: 60_000},
+			{Title: "Chapter 2", LengthMs: 60_000},
+		},
+	}
+	r := resolveChapters(ChapterModeTitlesFiles, provider, files, 120_000, "Book")
+	// Falls through to auto; provider runtime 0 vs 120000 mismatches, so file
+	// boundaries win — and the multi-file zero-chapters invariant holds.
+	if r.Source != SourceFiles || len(r.Chapters) != 2 || len(r.Warnings) == 0 {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestMixTitlesCountMismatchFallsBack(t *testing.T) {
+	files := chapterFixtures(2)
+	provider := &metadata.ChapterInfo{
+		Chapters: []metadata.Chapter{
+			{Title: "1", LengthMs: 60_000}, {Title: "2", LengthMs: 60_000},
+			{Title: "3", LengthMs: 60_000}, {Title: "4", LengthMs: 60_000},
+			{Title: "5", LengthMs: 60_000},
+		},
+	}
+	r := resolveChapters(ChapterModeTitlesFiles, provider, files, 120_000, "Book")
+	if r.Source != SourceFiles || len(r.Warnings) == 0 {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestMixTitlesOnExistingChapters(t *testing.T) {
+	files := []*FileInfo{{
+		Path: "book.m4b", DurationMs: 120_000,
+		Chapters: []ProbedChapter{
+			{Title: "Track 01", StartMs: 0, EndMs: 55_000},
+			{Title: "Track 02", StartMs: 55_000, EndMs: 120_000},
+		},
+	}}
+	provider := &metadata.ChapterInfo{
+		Chapters: []metadata.Chapter{
+			{Title: "A Real Name", StartMs: 0, LengthMs: 50_000},
+			{Title: "Another Name", StartMs: 50_000, LengthMs: 70_000},
+		},
+	}
+	r := resolveChapters(ChapterModeTitlesExisting, provider, files, 120_000, "Book")
+	if r.Source != SourceTitlesExisting || len(r.Chapters) != 2 {
+		t.Fatalf("%+v", r)
+	}
+	// Embedded timings survive; provider names replace the junk titles.
+	if r.Chapters[0].Title != "A Real Name" || r.Chapters[1].StartMs != 55_000 || r.Chapters[1].LengthMs != 65_000 {
+		t.Errorf("%+v", r.Chapters)
+	}
+}
+
+func TestMixTitlesExistingOnMultiFileFallsBack(t *testing.T) {
+	provider := &metadata.ChapterInfo{
+		Chapters: []metadata.Chapter{{Title: "One", LengthMs: 60_000}},
+	}
+	r := resolveChapters(ChapterModeTitlesExisting, provider, chapterFixtures(3), 180_000, "Book")
+	if r.Source != SourceFiles || len(r.Chapters) != 3 || len(r.Warnings) == 0 {
+		t.Errorf("%+v", r)
+	}
+}
+
+func TestMixTitlesNoProviderFallsBack(t *testing.T) {
+	r := resolveChapters(ChapterModeTitlesFiles, nil, chapterFixtures(3), 180_000, "Book")
+	if r.Source != SourceFiles || len(r.Chapters) != 3 || len(r.Warnings) == 0 {
 		t.Errorf("%+v", r)
 	}
 }

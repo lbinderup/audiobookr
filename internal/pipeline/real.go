@@ -47,6 +47,9 @@ func (rc *RealConverter) http() *http.Client {
 }
 
 func (rc *RealConverter) Run(ctx context.Context, job *store.Job, report ProgressFunc, logf LogFunc) (*Result, error) {
+	if job.Options.IsRetag() {
+		return rc.runRetag(ctx, job, report, logf)
+	}
 	opts := job.Options
 	workDir := filepath.Join(rc.WorkRoot, job.ID)
 	stagingDir := filepath.Join(opts.OutputDir, ".audioborker-work", job.ID)
@@ -98,34 +101,33 @@ func (rc *RealConverter) Run(ctx context.Context, job *store.Job, report Progres
 	// ---- merge ----------------------------------------------------------
 	stagedM4B := filepath.Join(stagingDir, "book.m4b")
 	runner := ffmpegRunner{ffmpeg: rc.FFmpeg}
-	if plan.StreamCopy && len(files) == 1 {
-		logf("single AAC file: copying without re-encode")
-		if err := copyFile(files[0].Path, stagedM4B); err != nil {
-			return nil, err
+	// Even a single already-AAC file goes through ffmpeg rather than a byte
+	// copy: -map_metadata -1 -map_chapters -1 is what guarantees the staged file
+	// starts with zero metadata, and tone MERGES rather than clears. A raw copy
+	// left the source's own atoms (ISBN, RATING, a stale SERIES from whatever
+	// tagged it) in the output, so single-file conversions were tagged
+	// inconsistently with multi-file ones. Stream-copying one file is I/O-bound
+	// like the copy was, and adds +faststart for free.
+	listPath := filepath.Join(workDir, "concat.txt")
+	if err := writeConcatList(listPath, files); err != nil {
+		return nil, err
+	}
+	mergeProgress := func(frac float64) { report("merge", scaled(0.10, 0.78, frac)) }
+	useFdkaac := opts.Encoder == "fdkaac" && !plan.StreamCopy
+	if useFdkaac {
+		if _, lookErr := exec.LookPath(rc.Fdkaac); lookErr != nil {
+			warnings = append(warnings, "fdkaac is not available in this image — used ffmpeg's native AAC encoder instead.")
+			useFdkaac = false
 		}
-		report("merge", 0.88)
+	}
+	var mergeErr error
+	if useFdkaac {
+		mergeErr = runner.mergeFdkaac(ctx, rc.Fdkaac, plan, listPath, stagedM4B, mergeProgress, logf)
 	} else {
-		listPath := filepath.Join(workDir, "concat.txt")
-		if err := writeConcatList(listPath, files); err != nil {
-			return nil, err
-		}
-		mergeProgress := func(frac float64) { report("merge", scaled(0.10, 0.78, frac)) }
-		useFdkaac := opts.Encoder == "fdkaac" && !plan.StreamCopy
-		if useFdkaac {
-			if _, lookErr := exec.LookPath(rc.Fdkaac); lookErr != nil {
-				warnings = append(warnings, "fdkaac is not available in this image — used ffmpeg's native AAC encoder instead.")
-				useFdkaac = false
-			}
-		}
-		var mergeErr error
-		if useFdkaac {
-			mergeErr = runner.mergeFdkaac(ctx, rc.Fdkaac, plan, listPath, stagedM4B, mergeProgress, logf)
-		} else {
-			mergeErr = runner.merge(ctx, plan, listPath, stagedM4B, mergeProgress, logf)
-		}
-		if mergeErr != nil {
-			return nil, mergeErr
-		}
+		mergeErr = runner.merge(ctx, plan, listPath, stagedM4B, mergeProgress, logf)
+	}
+	if mergeErr != nil {
+		return nil, mergeErr
 	}
 
 	// ---- chapters -------------------------------------------------------
@@ -138,22 +140,8 @@ func (rc *RealConverter) Run(ctx context.Context, job *store.Job, report Progres
 	if chapterMode == "" {
 		chapterMode = ChapterModeAuto
 	}
-	var provided *metadata.ChapterInfo
-	if chapterMode != ChapterModeExisting && rc.Chapters != nil && job.ASIN != "" {
-		provided, err = rc.Chapters(opts.AudnexusURL).GetChapters(ctx, job.ASIN, job.Region)
-		if err != nil {
-			if metadata.IsNotFound(err) {
-				logf("no provider chapters for %s (%s)", job.ASIN, job.Region)
-			} else {
-				logf("chapter lookup failed (%v) — using file-based chapters", err)
-				warnings = append(warnings, "Chapter lookup failed; embedded file-based chapters instead.")
-			}
-		}
-	}
-	if shift := opts.EffectiveChapterShift(); !shift.IsZero() && provided != nil {
-		provided = provided.ShiftedBy(shift)
-		logf("applied chapter shift: %s", shift)
-	}
+	provided, chapterWarns := rc.providerChapters(ctx, job, chapterMode, logf)
+	warnings = append(warnings, chapterWarns...)
 	resolved := resolveChapters(chapterMode, provided, files, merged.DurationMs, job.Metadata.Title)
 	warnings = append(warnings, resolved.Warnings...)
 	logf("chapters: %d entries from %q", len(resolved.Chapters), resolved.Source)
@@ -315,6 +303,34 @@ func (rc *RealConverter) cleanupSource(job *store.Job, logf LogFunc) error {
 	default:
 		return fmt.Errorf("unknown cleanup mode %q", opts.CleanupMode)
 	}
+}
+
+// providerChapters fetches the catalog's chapter list for a job and applies
+// its snapshotted shift. A missing or failed lookup is not fatal — chapter
+// resolution falls back to the file's own data — so this returns warnings
+// rather than an error. Shared by conversions and retags.
+func (rc *RealConverter) providerChapters(ctx context.Context, job *store.Job, chapterMode string, logf LogFunc) (*metadata.ChapterInfo, []string) {
+	opts := job.Options
+	var warnings []string
+	var provided *metadata.ChapterInfo
+	if chapterMode != ChapterModeExisting && rc.Chapters != nil && job.ASIN != "" {
+		var err error
+		provided, err = rc.Chapters(opts.AudnexusURL).GetChapters(ctx, job.ASIN, job.Region)
+		if err != nil {
+			provided = nil
+			if metadata.IsNotFound(err) {
+				logf("no provider chapters for %s (%s)", job.ASIN, job.Region)
+			} else {
+				logf("chapter lookup failed (%v) — using file-based chapters", err)
+				warnings = append(warnings, "Chapter lookup failed; embedded file-based chapters instead.")
+			}
+		}
+	}
+	if shift := opts.EffectiveChapterShift(); !shift.IsZero() && provided != nil {
+		provided = provided.ShiftedBy(shift)
+		logf("applied chapter shift: %s", shift)
+	}
+	return provided, warnings
 }
 
 // pruneEmptyDirs removes dir if (recursively) empty, ignoring junk files.

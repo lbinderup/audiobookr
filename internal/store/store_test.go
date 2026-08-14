@@ -117,7 +117,7 @@ func TestJobLifecycle(t *testing.T) {
 	if clone.ID == job.ID || clone.RetriedFrom != job.ID {
 		t.Errorf("clone = %+v", clone)
 	}
-	if ok, _ := s.HasActiveJobForPath("Some Book"); !ok {
+	if ok, _ := s.HasActiveJobForPath(KindConvert, "Some Book"); !ok {
 		t.Error("clone should count as active for its path")
 	}
 
@@ -133,6 +133,60 @@ func TestJobLifecycle(t *testing.T) {
 	_ = logs
 	if _, total, _ := s.ListJobs(0, 10); total != 0 {
 		t.Errorf("history not cleared, %d jobs left", total)
+	}
+}
+
+func TestRetagKindSurvivesRetry(t *testing.T) {
+	s := openTest(t)
+
+	job := &Job{
+		InputPath: "Author/Book/Book [B000000001].m4b",
+		ASIN:      "B000000001", Region: "us",
+		Options: JobOptions{Kind: KindRetag, Rename: true, InputDir: "/output"},
+	}
+	if err := s.CreateJob(job); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetJob(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Options.IsRetag() || !got.Options.Rename {
+		t.Fatalf("kind/rename did not round-trip: %+v", got.Options)
+	}
+
+	// A retried retag must stay a retag: running a conversion against a
+	// library path would merge the file over itself.
+	s.FinishJob(job.ID, StatusError, "boom", "", "", nil)
+	clone, err := s.CloneForRetry(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !clone.Options.IsRetag() || !clone.Options.Rename {
+		t.Errorf("retry lost the retag kind: %+v", clone.Options)
+	}
+}
+
+func TestHasActiveJobForPathDiscriminatesByKind(t *testing.T) {
+	s := openTest(t)
+
+	// The same relative path under two roots is two different files.
+	const shared = "Author/Book.m4b"
+	if err := s.CreateJob(&Job{InputPath: shared}); err != nil { // convert
+		t.Fatal(err)
+	}
+	if ok, err := s.HasActiveJobForPath(KindConvert, shared); err != nil || !ok {
+		t.Errorf("convert job not found: %v %v", ok, err)
+	}
+	if ok, err := s.HasActiveJobForPath(KindRetag, shared); err != nil || ok {
+		t.Errorf("a convert job must not block a retag of the same relative path: %v %v", ok, err)
+	}
+
+	if err := s.CreateJob(&Job{InputPath: shared, Options: JobOptions{Kind: KindRetag}}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := s.HasActiveJobForPath(KindRetag, shared); !ok {
+		t.Error("retag job not found by its own kind")
 	}
 }
 

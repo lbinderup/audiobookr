@@ -19,6 +19,11 @@ type FileInfo struct {
 	Codec       string // e.g. "mp3", "aac", "flac"
 	Container   string // e.g. "mov,mp4,m4a,3gp,3g2,mj2", "mp3"
 	Chapters    []ProbedChapter
+	// Tags is the container-level metadata ffprobe reports. Key spelling is
+	// whatever the writing tool used — ffprobe lowercases the standard atoms
+	// and passes freeform ones through verbatim — so read it through
+	// metadata/embedded rather than indexing it directly.
+	Tags map[string]string
 }
 
 type ProbedChapter struct {
@@ -86,6 +91,7 @@ func (p prober) probe(ctx context.Context, path string) (*FileInfo, error) {
 		Path:       path,
 		Container:  raw.Format.FormatName,
 		DurationMs: secondsToMs(raw.Format.Duration),
+		Tags:       raw.Format.Tags,
 	}
 	if kb := parseBitrateKbps(raw.Format.BitRate); kb > 0 {
 		info.BitrateKbps = kb

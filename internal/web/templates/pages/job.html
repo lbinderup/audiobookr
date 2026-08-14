@@ -18,6 +18,17 @@
     </div>
   </div>
 
+  {{if .Job.Metadata.Sources}}
+  <details class="meta-sources">
+    <summary class="muted">Metadata sources</summary>
+    <ul class="meta-sources-list">
+      {{range fieldSources .Job.Metadata.Sources}}
+      <li>{{.Label}} <span class="source-badge source-{{.Source}}">{{.Source}}</span></li>
+      {{end}}
+    </ul>
+  </details>
+  {{end}}
+
   <div id="job-status-block"
        hx-get="/jobs/{{.Job.ID}}/status"
        hx-trigger="sse:job-{{.Job.ID}}-status"
