@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"audiobookr/internal/match"
-	"audiobookr/internal/metadata"
-	"audiobookr/internal/pipeline"
-	"audiobookr/internal/scan"
+	"audioborker/internal/match"
+	"audioborker/internal/metadata"
+	"audioborker/internal/pipeline"
+	"audioborker/internal/scan"
 )
 
 // audioContentTypes maps extensions the browser can typically play natively.

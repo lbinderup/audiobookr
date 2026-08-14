@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "audiobookr",
+      "name": "audioborker",
       "runtimeExecutable": "go",
-      "runtimeArgs": ["run", "./cmd/audiobookr"],
+      "runtimeArgs": ["run", "./cmd/audioborker"],
       "port": 8684
     }
   ]

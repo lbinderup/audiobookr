@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"audiobookr/internal/pipeline"
-	"audiobookr/internal/store"
+	"audioborker/internal/pipeline"
+	"audioborker/internal/store"
 )
 
 // jobTimeout bounds a single conversion; even a 100-hour book transcodes

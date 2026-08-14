@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"audiobookr/internal/queue"
+	"audioborker/internal/queue"
 )
 
 // handleEvents is the single SSE stream. Queue events are rendered into

@@ -6,8 +6,8 @@ import (
 	"os"
 	"sync"
 
-	"audiobookr/internal/pipeline"
-	"audiobookr/internal/scan"
+	"audioborker/internal/pipeline"
+	"audioborker/internal/scan"
 )
 
 // durationCache memoizes the measured length of a selection. Probing costs

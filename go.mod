@@ -1,4 +1,4 @@
-module audiobookr
+module audioborker
 
 go 1.26
 

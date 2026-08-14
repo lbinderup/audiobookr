@@ -3,7 +3,7 @@ package match
 import (
 	"testing"
 
-	"audiobookr/internal/metadata"
+	"audioborker/internal/metadata"
 )
 
 func TestNormalize(t *testing.T) {

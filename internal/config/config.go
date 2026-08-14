@@ -75,7 +75,7 @@ func Load(version string) Config {
 	return cfg
 }
 
-func (c Config) DBPath() string  { return filepath.Join(c.ConfigDir, "audiobookr.db") }
+func (c Config) DBPath() string  { return filepath.Join(c.ConfigDir, "audioborker.db") }
 func (c Config) LogsDir() string { return filepath.Join(c.ConfigDir, "logs") }
 func (c Config) WorkDir() string { return filepath.Join(c.ConfigDir, "work") }
 

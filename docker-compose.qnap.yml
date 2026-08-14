@@ -7,9 +7,9 @@
 # See docs/qnap.md for the full walkthrough, including how to let both a
 # personal account and the container service account manage the same files.
 services:
-  audiobookr:
-    image: ghcr.io/lbinderup/audiobookr:latest
-    container_name: audiobookr
+  audioborker:
+    image: ghcr.io/lbinderup/audioborker:latest
+    container_name: audioborker
     environment:
       # Run as the account that already owns your *arr-managed files — on most
       # NAS setups a dedicated service account, not a personal login.
@@ -25,7 +25,7 @@ services:
       - TZ=Etc/UTC
     volumes:
       # App data (database + job logs). Must be local disk, never a network mount.
-      - /share/Container/audiobookr/config:/config
+      - /share/Container/audioborker/config:/config
       # Where new audiobooks land (e.g. your download client's audiobook folder).
       - /share/Media/Downloads/Audiobooks:/input
       # Your Plex/Prologue library — finished .m4b files are written here.

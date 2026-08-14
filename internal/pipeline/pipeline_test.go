@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"audiobookr/internal/metadata"
+	"audioborker/internal/metadata"
 )
 
 func TestSnapBitrate(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"audiobookr/internal/metadata"
+	"audioborker/internal/metadata"
 )
 
 // CacheBook stores the book snapshot for (asin, region), preserving any

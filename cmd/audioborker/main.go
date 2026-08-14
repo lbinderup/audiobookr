@@ -1,4 +1,4 @@
-// audiobookr — self-hosted audiobook converter.
+// audioborker — self-hosted audiobook converter.
 // Copyright (C) 2026 Laurids Binderup
 //
 // This program is free software: you can redistribute it and/or modify it
@@ -27,13 +27,13 @@ import (
 
 	"sync"
 
-	"audiobookr/internal/config"
-	"audiobookr/internal/metadata"
-	"audiobookr/internal/metadata/audnexus"
-	"audiobookr/internal/pipeline"
-	"audiobookr/internal/queue"
-	"audiobookr/internal/store"
-	"audiobookr/internal/web"
+	"audioborker/internal/config"
+	"audioborker/internal/metadata"
+	"audioborker/internal/metadata/audnexus"
+	"audioborker/internal/pipeline"
+	"audioborker/internal/queue"
+	"audioborker/internal/store"
+	"audioborker/internal/web"
 )
 
 // version is stamped at build time via -ldflags "-X main.version=...".
@@ -48,7 +48,7 @@ func chapterSourceFactory(st *store.Store, version string) func(url string) pipe
 		mu.Lock()
 		p, ok := providers[url]
 		if !ok {
-			p = audnexus.New(url, "audiobookr/"+version)
+			p = audnexus.New(url, "audioborker/"+version)
 			providers[url] = p
 		}
 		mu.Unlock()
@@ -137,7 +137,7 @@ func main() {
 	srv := web.New(cfg, st, mgr, broker)
 
 	go func() {
-		log.Info("audiobookr listening", "addr", srv.Addr, "version", version, "dev", cfg.Dev)
+		log.Info("audioborker listening", "addr", srv.Addr, "version", version, "dev", cfg.Dev)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("http server", "err", err)
 			os.Exit(1)

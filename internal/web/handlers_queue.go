@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"audiobookr/internal/scan"
-	"audiobookr/internal/store"
+	"audioborker/internal/scan"
+	"audioborker/internal/store"
 )
 
 const jobsPerPage = 20

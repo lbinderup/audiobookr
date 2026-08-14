@@ -13,7 +13,7 @@ deploys as a Docker container on a NAS alongside the *arr suite.
 ## Architecture
 
 ```
-cmd/audiobookr/main.go   wiring, graceful shutdown, converter selection
+cmd/audioborker/main.go   wiring, graceful shutdown, converter selection
 internal/
   config/     env-derived process config (paths, ports, binary locations)
   store/      SQLite (modernc.org/sqlite, CGO off): settings, jobs, metadata cache
@@ -91,7 +91,7 @@ move → verify → cleanup).
 ## Development
 
 ```bash
-go run ./cmd/audiobookr    # http://localhost:8684
+go run ./cmd/audioborker    # http://localhost:8684
 go test ./...
 gofmt -l .                 # must be empty
 go vet ./...

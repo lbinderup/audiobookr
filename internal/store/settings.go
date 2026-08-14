@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"audiobookr/internal/pathtmpl"
+	"audioborker/internal/pathtmpl"
 )
 
 // Settings are the runtime-editable options, persisted as key/value rows.

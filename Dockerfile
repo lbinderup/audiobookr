@@ -9,7 +9,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
-    -o /out/audiobookr ./cmd/audiobookr
+    -o /out/audioborker ./cmd/audioborker
 
 # ---------- tone: single-binary audiobook tagger ----------
 FROM alpine:3.22 AS tone
@@ -41,7 +41,7 @@ RUN apk add --no-cache \
  && (apk add --no-cache fdkaac \
      || echo "NOTE: fdkaac unavailable for this arch; the native AAC encoder is used instead")
 COPY --from=tone /usr/local/bin/tone /usr/local/bin/tone
-COPY --from=build /out/audiobookr /app/audiobookr
+COPY --from=build /out/audioborker /app/audioborker
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

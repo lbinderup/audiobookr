@@ -1,16 +1,16 @@
 services:
-  audiobookr:
+  audioborker:
     # Published multi-arch image (amd64 + arm64). To build locally instead,
     # replace this with:  build: .
-    image: ghcr.io/lbinderup/audiobookr:latest
-    container_name: audiobookr
+    image: ghcr.io/lbinderup/audioborker:latest
+    container_name: audioborker
     environment:
       - PUID=1000            # must be able to read /input and write /output
       - PGID=1000
       - UMASK=002            # group-writable output; see docs/qnap.md
       - TZ=Etc/UTC
     volumes:
-      - /path/to/appdata/audiobookr:/config   # SQLite db + logs; local storage only (not NFS/SMB)
+      - /path/to/appdata/audioborker:/config   # SQLite db + logs; local storage only (not NFS/SMB)
       - /path/to/downloads/audiobooks:/input  # where raw audiobooks arrive
       - /path/to/library/audiobooks:/output   # your Plex/Prologue library
       - /path/to/processed:/completed         # optional: for the "move" cleanup mode

@@ -1,4 +1,4 @@
-# audiobookr
+# audioborker
 
 Self-hosted audiobook converter for the *arr crowd. Point it at a folder of
 raw audiobooks (mp3, m4a, m4b, flac, ogg, opus, wav — anything ffmpeg
@@ -57,14 +57,14 @@ on every push to `main`:
 
 ```yaml
 services:
-  audiobookr:
-    image: ghcr.io/lbinderup/audiobookr:latest
+  audioborker:
+    image: ghcr.io/lbinderup/audioborker:latest
     environment:
       - PUID=1000   # must read /input and write /output
       - PGID=1000
       - TZ=Etc/UTC
     volumes:
-      - /appdata/audiobookr:/config       # local disk only (not NFS/SMB)
+      - /appdata/audioborker:/config       # local disk only (not NFS/SMB)
       - /downloads/audiobooks:/input
       - /library/audiobooks:/output
       - /downloads/processed:/completed   # optional, for "move" cleanup
@@ -82,15 +82,15 @@ Open `http://nas:8684`, check **Settings**, then **Import → Match → Queue**.
 Building it yourself instead:
 
 ```bash
-docker build -t audiobookr .
-docker buildx build --platform linux/amd64,linux/arm64 -t audiobookr:latest .
+docker build -t audioborker .
+docker buildx build --platform linux/amd64,linux/arm64 -t audioborker:latest .
 ```
 
 ## Configuration
 
 Runtime settings (directories, path template, cleanup mode, metadata region,
 bitrate, encoder, worker concurrency, chapters.txt sidecar) live in the web UI
-under **Settings** and persist in `/config/audiobookr.db`.
+under **Settings** and persist in `/config/audioborker.db`.
 
 Environment variables (container-level):
 
@@ -129,7 +129,7 @@ why it is a separate binary.
 ## Development
 
 ```bash
-go run ./cmd/audiobookr   # http://localhost:8684
+go run ./cmd/audioborker   # http://localhost:8684
 go test ./...
 ```
 
@@ -160,5 +160,5 @@ Third-party components and their licenses are listed in
 Docker image redistributes GPLv3 FFmpeg, which carries its own source-offer
 obligation.
 
-audiobookr is not affiliated with Audible, Amazon, Audnexus, or the *arr
+audioborker is not affiliated with Audible, Amazon, Audnexus, or the *arr
 projects.

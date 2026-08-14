@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"audiobookr/internal/store"
+	"audioborker/internal/store"
 )
 
 //go:embed templates

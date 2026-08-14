@@ -4,7 +4,7 @@ set -e
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
-# UMASK controls the permissions of everything audiobookr creates (and
+# UMASK controls the permissions of everything audioborker creates (and
 # everything ffmpeg/tone create, since they inherit it).
 #
 #   002 (default) -> files 664, dirs 775: the group can write.
@@ -48,12 +48,12 @@ fi
 mkdir -p /config/logs /config/work
 chown abc:abc /config /config/logs /config/work
 # Migration aid: adopt a database created by an older/root run.
-for f in /config/audiobookr.db /config/audiobookr.db-wal /config/audiobookr.db-shm; do
+for f in /config/audioborker.db /config/audioborker.db-wal /config/audioborker.db-shm; do
     [ -e "$f" ] && chown abc:abc "$f"
 done
 
 # Never chown /input or /output — set PUID/PGID to ids that already own your
 # media, the same convention as linuxserver.io images.
 
-echo "audiobookr starting as uid=$PUID gid=$PGID umask=$(umask)"
-exec su-exec abc:abc /app/audiobookr
+echo "audioborker starting as uid=$PUID gid=$PGID umask=$(umask)"
+exec su-exec abc:abc /app/audioborker

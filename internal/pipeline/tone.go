@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"audiobookr/internal/metadata"
+	"audioborker/internal/metadata"
 )
 
 type toneRunner struct {

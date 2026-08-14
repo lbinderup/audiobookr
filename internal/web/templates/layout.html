@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.Title}} · Audiobookr</title>
+  <title>{{.Title}} · Audioborker</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css?v={{.Version}}">
   <script src="/static/htmx.min.js?v={{.Version}}" defer></script>
@@ -11,7 +11,7 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/import"><span class="brand-mark">◈</span> audiobookr</a>
+    <a class="brand" href="/import"><span class="brand-mark">◈</span> audioborker</a>
     <nav>
       <a href="/import" {{if eq .Active "import"}}class="active"{{end}}>Import</a>
       <a href="/queue" {{if eq .Active "queue"}}class="active"{{end}}>Queue</a>
@@ -22,7 +22,7 @@
     {{template "flash" .}}
     {{template "content" .}}
   </main>
-  <footer>audiobookr {{.Version}}</footer>
+  <footer>audioborker {{.Version}}</footer>
   <script>
     // Success flashes fade out; error flashes stay until dismissed by
     // navigation so problems don't vanish unread.

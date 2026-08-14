@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"audiobookr/internal/metadata"
-	"audiobookr/internal/pathtmpl"
-	"audiobookr/internal/store"
+	"audioborker/internal/metadata"
+	"audioborker/internal/pathtmpl"
+	"audioborker/internal/store"
 )
 
 // FakeConverter simulates a conversion for UI development: it walks the real

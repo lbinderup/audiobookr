@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"audiobookr/internal/metadata"
-	"audiobookr/internal/metadata/audible"
+	"audioborker/internal/metadata"
+	"audioborker/internal/metadata/audible"
 )
 
 type Provider struct {

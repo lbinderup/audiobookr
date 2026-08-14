@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"audiobookr/internal/metadata"
+	"audioborker/internal/metadata"
 )
 
 // regionTLD maps Audnexus/Audible region codes to catalog API TLDs.

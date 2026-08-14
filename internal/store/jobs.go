@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"audiobookr/internal/metadata"
+	"audioborker/internal/metadata"
 )
 
 // Job statuses.

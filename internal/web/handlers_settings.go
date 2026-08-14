@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"audiobookr/internal/config"
-	"audiobookr/internal/pathtmpl"
-	"audiobookr/internal/store"
+	"audioborker/internal/config"
+	"audioborker/internal/pathtmpl"
+	"audioborker/internal/store"
 )
 
 type settingsData struct {
@@ -64,7 +64,7 @@ func (d *settingsData) fillVolumes(cfg config.Config) {
 	checks := []struct {
 		path, why string
 	}{
-		{cfg.InputDir, "audiobookr has nothing to import from."},
+		{cfg.InputDir, "audioborker has nothing to import from."},
 		{cfg.OutputDir, "converted files would be written inside the container and lost when it is recreated."},
 		{cfg.CompletedDir, "the \"move\" cleanup mode cannot be used."},
 	}

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"audiobookr/internal/metadata"
-	"audiobookr/internal/pathtmpl"
-	"audiobookr/internal/store"
+	"audioborker/internal/metadata"
+	"audioborker/internal/pathtmpl"
+	"audioborker/internal/store"
 )
 
 // ChapterSource fetches provider chapters (implemented by the audnexus
@@ -49,7 +49,7 @@ func (rc *RealConverter) http() *http.Client {
 func (rc *RealConverter) Run(ctx context.Context, job *store.Job, report ProgressFunc, logf LogFunc) (*Result, error) {
 	opts := job.Options
 	workDir := filepath.Join(rc.WorkRoot, job.ID)
-	stagingDir := filepath.Join(opts.OutputDir, ".audiobookr-work", job.ID)
+	stagingDir := filepath.Join(opts.OutputDir, ".audioborker-work", job.ID)
 	for _, d := range []string{workDir, stagingDir} {
 		if err := os.MkdirAll(d, 0o777); err != nil {
 			return nil, fmt.Errorf("create %s: %w", d, err)

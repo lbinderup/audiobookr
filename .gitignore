@@ -2,8 +2,8 @@
 devdata/
 
 # Build output
-/audiobookr
-/audiobookr.exe
+/audioborker
+/audioborker.exe
 dist/
 
 # Logs

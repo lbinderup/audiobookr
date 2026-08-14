@@ -6,11 +6,11 @@ import (
 	"path"
 	"time"
 
-	"audiobookr/internal/match"
-	"audiobookr/internal/metadata"
-	"audiobookr/internal/metadata/audnexus"
-	"audiobookr/internal/scan"
-	"audiobookr/internal/store"
+	"audioborker/internal/match"
+	"audioborker/internal/metadata"
+	"audioborker/internal/metadata/audnexus"
+	"audioborker/internal/scan"
+	"audioborker/internal/store"
 )
 
 type matchItem struct {

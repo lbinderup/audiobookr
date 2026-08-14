@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"audiobookr/internal/config"
-	"audiobookr/internal/metadata"
-	"audiobookr/internal/metadata/audnexus"
-	"audiobookr/internal/queue"
-	"audiobookr/internal/store"
+	"audioborker/internal/config"
+	"audioborker/internal/metadata"
+	"audioborker/internal/metadata/audnexus"
+	"audioborker/internal/queue"
+	"audioborker/internal/store"
 )
 
 type Server struct {
@@ -67,7 +67,7 @@ func (s *Server) provider() metadata.Provider {
 	s.provMu.Lock()
 	defer s.provMu.Unlock()
 	if s.prov == nil || s.provURL != set.AudnexusURL {
-		s.prov = audnexus.New(set.AudnexusURL, "audiobookr/"+s.cfg.Version)
+		s.prov = audnexus.New(set.AudnexusURL, "audioborker/"+s.cfg.Version)
 		s.provURL = set.AudnexusURL
 	}
 	return s.prov

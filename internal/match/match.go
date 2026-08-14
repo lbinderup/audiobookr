@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"audiobookr/internal/metadata"
+	"audioborker/internal/metadata"
 )
 
 var (

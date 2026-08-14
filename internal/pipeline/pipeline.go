@@ -8,7 +8,7 @@ package pipeline
 import (
 	"context"
 
-	"audiobookr/internal/store"
+	"audioborker/internal/store"
 )
 
 // Stages in execution order; the UI shows these as the job's current step.

@@ -1,6 +1,6 @@
-# Running audiobookr on a QNAP NAS (Container Station)
+# Running audioborker on a QNAP NAS (Container Station)
 
-This gets audiobookr running next to your other *arr apps in Container
+This gets audioborker running next to your other *arr apps in Container
 Station, pulling a published image the same way they do.
 
 ## 1. Publish the image (once)
@@ -12,9 +12,9 @@ pushes it to GitHub's container registry.
    Watch it under the repo's **Actions** tab; it takes a few minutes (the arm64
    layer builds under emulation).
 2. When it finishes, the image exists at
-   `ghcr.io/lbinderup/audiobookr:latest`.
+   `ghcr.io/lbinderup/audioborker:latest`.
 3. **Make the package public** so Container Station can pull it without
-   credentials: GitHub → your profile → **Packages** → `audiobookr` →
+   credentials: GitHub → your profile → **Packages** → `audioborker` →
    *Package settings* → **Change visibility** → Public.
 
    Prefer to keep it private? Then in Container Station go to
@@ -22,12 +22,12 @@ pushes it to GitHub's container registry.
    GitHub username, password = a Personal Access Token with `read:packages`.
 
 > Building on the NAS instead: SSH in, `git clone` the repo, and run
-> `docker build -t audiobookr:latest .`. It works, but it's slow on NAS
+> `docker build -t audioborker:latest .`. It works, but it's slow on NAS
 > hardware and needs the CLI — the registry route is easier to keep updated.
 
 ## 2. Find your PUID / PGID
 
-audiobookr runs as an unprivileged user inside the container. That user must
+audioborker runs as an unprivileged user inside the container. That user must
 own (or be able to read/write) your media folders, or conversions fail with
 permission errors.
 
@@ -90,7 +90,7 @@ the arrangement survives everything created from then on.
 This is the step people miss. A umask can only *remove* permission bits, so
 setgid alone still yields 644 files that the group cannot write.
 
-- audiobookr: `UMASK=002` (already the default in this image).
+- audioborker: `UMASK=002` (already the default in this image).
 - linuxserver.io *arr containers: add `- UMASK=002` to their environment.
 - Your SMB uploads: **don't** go looking for a `create mask` setting — QTS has
   no GUI for it, and its generated Samba config sets `inherit permissions = yes`,
@@ -115,7 +115,7 @@ After this, both identities can fully manage every file, no more `chown` over
 SSH. Existing files need the one-time `chmod`/`chgrp` above; everything created
 afterwards inherits it automatically.
 
-> Which PUID should audiobookr use? Whichever account already owns your media —
+> Which PUID should audioborker use? Whichever account already owns your media —
 > i.e. the same service account your other *arr apps run as. It is the group
 > and umask, not the uid, that let your personal account co-manage the results.
 > If one group can't cover everything, `SUPPLEMENTARY_GIDS=100,1000` adds extra
@@ -129,7 +129,7 @@ afterwards inherits it automatically.
 ## 3. Create the application
 
 Container Station → **Applications** → **Create** → give it the name
-`audiobookr`, then paste the YAML from
+`audioborker`, then paste the YAML from
 [`docker-compose.qnap.yml`](../docker-compose.qnap.yml), editing:
 
 - the four host paths (`/share/...`) to match your actual shares,
@@ -164,13 +164,13 @@ detail page; a working run ends with a `verified: …, N chapters` line.
 
 ## 5. Updating
 
-Container Station → Applications → `audiobookr` → **Recreate** (or *Pull* then
+Container Station → Applications → `audioborker` → **Recreate** (or *Pull* then
 restart) fetches the newest `:latest`. Your database and settings live in
 `/config`, so they survive updates.
 
 To pin a specific version instead of tracking `latest`, tag a release
 (`git tag v1.0.0 && git push --tags`) and use
-`ghcr.io/lbinderup/audiobookr:1.0.0` in the compose file.
+`ghcr.io/lbinderup/audioborker:1.0.0` in the compose file.
 
 ## Troubleshooting
 

@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"audiobookr/internal/metadata"
+	"audioborker/internal/metadata"
 )
 
 // bookJSON is a trimmed capture of the live /books/{asin} response shape.
@@ -51,14 +51,14 @@ func TestGetBookParsesLiveShape(t *testing.T) {
 		if r.URL.Query().Get("region") != "us" {
 			t.Errorf("region not forwarded: %s", r.URL.RawQuery)
 		}
-		if r.Header.Get("User-Agent") != "audiobookr/test" {
+		if r.Header.Get("User-Agent") != "audioborker/test" {
 			t.Errorf("missing user agent, got %q", r.Header.Get("User-Agent"))
 		}
 		w.Write([]byte(bookJSON))
 	}))
 	defer srv.Close()
 
-	p := New(srv.URL, "audiobookr/test")
+	p := New(srv.URL, "audioborker/test")
 	book, err := p.GetBook(context.Background(), "B08G9PRS1K", "us")
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +119,7 @@ func TestGetChaptersParsesLiveShape(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := New(srv.URL, "audiobookr/test")
+	p := New(srv.URL, "audioborker/test")
 	info, err := p.GetChapters(context.Background(), "B08G9PRS1K", "us")
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +140,7 @@ func TestGetBook404IsNotFoundAndNotRetried(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := New(srv.URL, "audiobookr/test")
+	p := New(srv.URL, "audioborker/test")
 	_, err := p.GetBook(context.Background(), "B000000000", "uk")
 	if !metadata.IsNotFound(err) {
 		t.Fatalf("expected NotFound, got %v", err)
@@ -161,7 +161,7 @@ func TestGetBookRetriesOn5xx(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := New(srv.URL, "audiobookr/test")
+	p := New(srv.URL, "audioborker/test")
 	book, err := p.GetBook(context.Background(), "B08G9PRS1K", "us")
 	if err != nil {
 		t.Fatalf("expected success after retries, got %v", err)

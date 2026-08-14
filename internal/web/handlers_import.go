@@ -3,7 +3,7 @@ package web
 import (
 	"net/http"
 
-	"audiobookr/internal/scan"
+	"audioborker/internal/scan"
 )
 
 type importData struct {

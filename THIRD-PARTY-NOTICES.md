@@ -1,6 +1,6 @@
 # Third-party notices
 
-audiobookr itself is licensed under the GNU General Public License v3.0 or
+audioborker itself is licensed under the GNU General Public License v3.0 or
 later — see [LICENSE](LICENSE). This file records the licenses of everything
 it bundles, vendors, or ships alongside.
 
@@ -36,7 +36,7 @@ without conditions; these entries are informational courtesy, not obligations.
 
 ## External programs (invoked as subprocesses, shipped in the Docker image)
 
-audiobookr calls these as separate processes via fork/exec with command-line
+audioborker calls these as separate processes via fork/exec with command-line
 arguments — it does not link against them. Under the FSF's own reading
 ([GPL FAQ: MereAggregation](https://www.gnu.org/licenses/gpl-faq.html#MereAggregation),
 [GPLPlugins](https://www.gnu.org/licenses/gpl-faq.html#GPLPlugins)) this keeps
@@ -55,16 +55,16 @@ builds as GPL-3.0-or-later. You must then satisfy the GPL for that component:
 ship the license text and provide corresponding source or a written offer for
 it. Alpine's source packages (`https://gitlab.alpinelinux.org/alpine/aports`)
 and FFmpeg's upstream release tarballs are the practical way to do this.
-Since audiobookr is itself GPL-3.0, the combination is license-consistent.
+Since audioborker is itself GPL-3.0, the combination is license-consistent.
 
 **Note on FDK-AAC:** the Fraunhofer FDK AAC library is *not* GPL-compatible
 and grants no patent license, which is why no redistributable FFmpeg build
-includes `libfdk_aac`. audiobookr therefore uses the standalone `fdkaac`
+includes `libfdk_aac`. audioborker therefore uses the standalone `fdkaac`
 program as an optional, separately-invoked encoder rather than linking it.
 
 ## Prior art
 
-audiobookr is an independent reimplementation inspired by
+audioborker is an independent reimplementation inspired by
 [bragibooks](https://github.com/djdembeck/bragibooks) and
 [m4b-merge](https://github.com/djdembeck/m4b-merge) (both GPL-3.0). No code
 was copied from either project; only publicly observable behaviour — API

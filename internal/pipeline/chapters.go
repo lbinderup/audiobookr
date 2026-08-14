@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"audiobookr/internal/metadata"
+	"audioborker/internal/metadata"
 )
 
 // ResolvedChapters is what actually gets embedded, plus provenance for the
